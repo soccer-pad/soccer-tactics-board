@@ -181,6 +181,12 @@ input[type="text"] {
   border-color: #d84315;
 }
 
+.line-type-btn.active {
+  background: #2e7d32;
+  border-color: #2e7d32;
+  color: #fff;
+}
+
 #gridToggleBtn.active {
   background: #00838f;
   border-color: #00838f;

@@ -25,15 +25,15 @@
         <button class="tab-btn" data-tab="equip">🧰 용품</button>
         <button class="tab-btn" data-tab="line">➰ 방향선</button>
         <button class="tab-btn" data-tab="text">📝 설명</button>
-        <button class="tab-btn" data-tab="save">💾 저장</button>
         <button class="tab-btn" data-tab="option">⚙️ 옵션</button>
+        <button class="tab-btn" data-tab="save">💾 저장</button>
       </div>
 
       <div class="tab-panels">
         <!-- 팀 -->
         <section class="tab-panel active" data-panel="team">
           <div class="panel-head">
-            <span>팀 (손잡이를 필드로 드래그하거나 "+선수")</span>
+            <span>팀</span>
             <button id="addTeamBtn" class="small-btn accent">+ 팀 추가</button>
           </div>
           <div id="teamsPanel" class="teams-panel"></div>
@@ -60,11 +60,11 @@
           <div class="panel-head"><span>선 그리기</span></div>
           <div class="group">
             <label>선 종류</label>
-            <select id="lineType">
-              <option value="solid">실선</option>
-              <option value="dashed">점선</option>
-              <option value="freehand">자유곡선</option>
-            </select>
+            <div class="row-actions wrap" id="lineTypePanel">
+              <button class="small-btn line-type-btn active" data-value="solid">실선</button>
+              <button class="small-btn line-type-btn" data-value="dashed">점선</button>
+              <button class="small-btn line-type-btn" data-value="freehand">자유곡선</button>
+            </div>
           </div>
           <div class="group">
             <label>선 색상</label>
@@ -80,24 +80,10 @@
         <section class="tab-panel" data-panel="text">
           <div class="panel-head"><span>필드에 텍스트 라벨 추가</span></div>
           <div class="row-actions">
-            <input type="text" id="textInput" placeholder="예: 압박, 스위치, 침투" maxlength="20" />
+            <input type="text" id="textInput" placeholder="" maxlength="20" />
             <button id="addTextBtn" class="small-btn accent">+ 추가</button>
           </div>
           <div id="textList" class="text-list"></div>
-        </section>
-
-        <!-- 저장 -->
-        <section class="tab-panel" data-panel="save">
-          <div class="panel-head"><span>작전 저장</span></div>
-          <div class="row-actions">
-            <input type="text" id="saveNameInput" placeholder="작전 이름 (예: 수비 전환)" maxlength="30" />
-            <button id="saveBoardBtn" class="small-btn accent">저장</button>
-          </div>
-          <div id="savesList" class="save-list"></div>
-          <div class="panel-head sub"><span>기타</span></div>
-          <div class="row-actions wrap">
-            <button id="exportBtn" class="small-btn">이미지로 저장</button>
-          </div>
         </section>
 
         <!-- 옵션 -->
@@ -106,6 +92,22 @@
           <div class="row-actions wrap">
             <button id="modeBtn" class="mode-move">이동 모드</button>
             <button id="gridToggleBtn" class="small-btn">▦ 격자 표시</button>
+          </div>
+
+          <div class="panel-head sub"><span>필드 모드</span></div>
+          <div class="group">
+            <label>축구장 종류</label>
+            <select id="pitchModeSelect">
+              <option value="full">정규 축구장 (가로)</option>
+              <option value="half">하프 코트 (세로)</option>
+            </select>
+          </div>
+          <div class="group" id="halfGoalGroup" style="display:none">
+            <label>골대 위치</label>
+            <select id="halfGoalSelect">
+              <option value="bottom">아래</option>
+              <option value="top">위</option>
+            </select>
           </div>
 
           <div class="panel-head sub"><span>구역 표시</span></div>
@@ -131,6 +133,20 @@
           <div class="panel-head sub"><span>기타</span></div>
           <div class="row-actions wrap">
             <button id="resetBtn" class="small-btn">전체 초기화</button>
+          </div>
+        </section>
+
+        <!-- 저장 -->
+        <section class="tab-panel" data-panel="save">
+          <div class="panel-head"><span>작전 저장</span></div>
+          <div class="row-actions">
+            <input type="text" id="saveNameInput" placeholder="작전 이름 (예: 수비 전환)" maxlength="30" />
+            <button id="saveBoardBtn" class="small-btn accent">저장</button>
+          </div>
+          <div id="savesList" class="save-list"></div>
+          <div class="panel-head sub"><span>기타</span></div>
+          <div class="row-actions wrap">
+            <button id="exportBtn" class="small-btn">이미지로 저장</button>
           </div>
         </section>
       </div>

@@ -2,8 +2,6 @@
 
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
-const W = canvas.width;
-const H = canvas.height;
 
 // ---- 정식 규격 축구장 (FIFA 권장: 길이 105m x 폭 68m) ----
 const SCALE = 8; // px per meter
@@ -15,11 +13,27 @@ const PITCH = {
   cornerArc: 0.9144, goalWidth: 7.32,
 };
 
-const fieldW = PITCH.len * SCALE;
-const fieldH = PITCH.wid * SCALE;
-const field = { left: 50, top: 50, right: 50 + fieldW, bottom: 50 + fieldH };
-const fieldCenterX = (field.left + field.right) / 2;
-const fieldCenterY = (field.top + field.bottom) / 2;
+// 필드 크기/좌표는 '정규 축구장(가로)' / '하프 코트(세로)' 모드에 따라 달라지므로
+// const가 아니라 setFieldGeometry()로 다시 계산되는 변수로 둔다.
+let W, H, fieldW, fieldH, field, fieldCenterX, fieldCenterY;
+
+function setFieldGeometry() {
+  const mode = state && state.pitchMode === 'half' ? 'half' : 'full';
+  if (mode === 'half') {
+    fieldW = PITCH.wid * SCALE;
+    fieldH = (PITCH.len / 2) * SCALE;
+  } else {
+    fieldW = PITCH.len * SCALE;
+    fieldH = PITCH.wid * SCALE;
+  }
+  W = fieldW + 100;
+  H = fieldH + 100;
+  field = { left: 50, top: 50, right: 50 + fieldW, bottom: 50 + fieldH };
+  fieldCenterX = (field.left + field.right) / 2;
+  fieldCenterY = (field.top + field.bottom) / 2;
+  canvas.width = W;
+  canvas.height = H;
+}
 
 const boxDepthPx = PITCH.penaltyDepth * SCALE;
 const boxWidthPx = PITCH.penaltyWidth * SCALE;
@@ -108,8 +122,17 @@ function formationToPlayers(key, side) {
   const positions = FORMATIONS[key];
   return positions.map((pos, i) => {
     const [relX, relY] = pos;
-    const x = side === 'L' ? field.left + relX * (fieldW / 2) : field.right - relX * (fieldW / 2);
-    const y = field.top + relY * fieldH;
+    let x, y;
+    if (state.pitchMode === 'half') {
+      // relX: 0=골라인, 1=하프라인 (세로축) / relY: 0=왼쪽 터치라인, 1=오른쪽 터치라인 (가로축)
+      const goalY = state.halfGoalPos === 'bottom' ? field.bottom : field.top;
+      const halfwayY = state.halfGoalPos === 'bottom' ? field.top : field.bottom;
+      x = field.left + relY * fieldW;
+      y = goalY + (halfwayY - goalY) * relX;
+    } else {
+      x = side === 'L' ? field.left + relX * (fieldW / 2) : field.right - relX * (fieldW / 2);
+      y = field.top + relY * fieldH;
+    }
     return { id: nextId(), num: i + 1, x, y };
   });
 }
@@ -127,13 +150,19 @@ let selectedEquipId = null;
 function initState() {
   idCounter = 0;
   cascadeCounter = 0;
-  state = { teams: [], equipment: [], arrows: [], texts: [], zones: { lengthZones: 0, widthZones: 0 }, showGrid: false };
+  state = {
+    teams: [], equipment: [], arrows: [], texts: [],
+    zones: { lengthZones: 0, widthZones: 0 }, showGrid: false,
+    pitchMode: 'full', halfGoalPos: 'bottom',
+  };
 }
 
 function ensureStateDefaults() {
   if (!state.zones) state.zones = { lengthZones: 0, widthZones: 0 };
   if (!state.texts) state.texts = [];
   if (typeof state.showGrid !== 'boolean') state.showGrid = false;
+  if (state.pitchMode !== 'full' && state.pitchMode !== 'half') state.pitchMode = 'full';
+  if (state.halfGoalPos !== 'top' && state.halfGoalPos !== 'bottom') state.halfGoalPos = 'bottom';
   state.teams.forEach(t => { if (!t.id) t.id = nextId(); });
 }
 
@@ -232,6 +261,11 @@ function findTeam(id) {
 
 // ---- 필드 그리기 ----
 function drawField() {
+  if (state.pitchMode === 'half') drawHalfField();
+  else drawFullField();
+}
+
+function drawPitchBase() {
   ctx.fillStyle = '#1b1f24';
   ctx.fillRect(0, 0, W, H);
 
@@ -248,6 +282,10 @@ function drawField() {
   ctx.strokeStyle = '#fff';
   ctx.lineWidth = 2;
   ctx.strokeRect(field.left, field.top, fieldW, fieldH);
+}
+
+function drawFullField() {
+  drawPitchBase();
 
   ctx.beginPath();
   ctx.moveTo(fieldCenterX, field.top);
@@ -290,12 +328,66 @@ function drawField() {
   drawGoalMouth(field.right, fieldCenterY, 1);
 }
 
+// 하프 코트 (세로 방향, 골대가 위 또는 아래)
+function drawHalfField() {
+  drawPitchBase();
+
+  const goalIsBottom = state.halfGoalPos !== 'top';
+  const goalY = goalIsBottom ? field.bottom : field.top;
+  const halfwayY = goalIsBottom ? field.top : field.bottom;
+  const cx = fieldCenterX;
+
+  // 하프라인 + 센터서클 절반 (골대 쪽으로 볼록하게)
+  ctx.beginPath();
+  ctx.moveTo(field.left, halfwayY);
+  ctx.lineTo(field.right, halfwayY);
+  ctx.stroke();
+  ctx.beginPath();
+  if (goalIsBottom) ctx.arc(cx, halfwayY, centerCirclePx, 0, Math.PI);
+  else ctx.arc(cx, halfwayY, centerCirclePx, Math.PI, Math.PI * 2);
+  ctx.stroke();
+
+  // 페널티 박스 / 골 에어리어
+  const boxRectY = goalIsBottom ? goalY - boxDepthPx : goalY;
+  ctx.strokeRect(cx - boxWidthPx / 2, boxRectY, boxWidthPx, boxDepthPx);
+  const smallBoxRectY = goalIsBottom ? goalY - smallBoxDepthPx : goalY;
+  ctx.strokeRect(cx - smallBoxWidthPx / 2, smallBoxRectY, smallBoxWidthPx, smallBoxDepthPx);
+
+  // 페널티 스팟 + 아크
+  const spotY = goalIsBottom ? goalY - penaltySpotPx : goalY + penaltySpotPx;
+  ctx.beginPath();
+  ctx.arc(cx, spotY, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  const arcCenterAngle = goalIsBottom ? -Math.PI / 2 : Math.PI / 2;
+  ctx.beginPath();
+  ctx.arc(cx, spotY, centerCirclePx, arcCenterAngle - penaltyArcHalfAngle, arcCenterAngle + penaltyArcHalfAngle);
+  ctx.stroke();
+
+  // 골라인 쪽 코너 아크 2개만
+  const allCorners = [[field.left, field.top, 0, 0.5], [field.right, field.top, 0.5, 1], [field.left, field.bottom, -0.5, 0], [field.right, field.bottom, 1, 1.5]];
+  allCorners.filter(([, cy2]) => cy2 === goalY).forEach(([cx2, cy2, a0, a1]) => {
+    ctx.beginPath();
+    ctx.arc(cx2, cy2, cornerArcPx, a0 * Math.PI, a1 * Math.PI);
+    ctx.stroke();
+  });
+
+  drawGoalMouthHorizontal(goalY, cx, goalIsBottom ? 1 : -1);
+}
+
 function drawGoalMouth(lineX, cy, dir) {
   const depth = 14;
   const half = goalWidthPx / 2;
   ctx.strokeStyle = '#eee';
   ctx.lineWidth = 3;
   ctx.strokeRect(dir > 0 ? lineX : lineX - depth, cy - half, depth, half * 2);
+}
+
+function drawGoalMouthHorizontal(lineY, cx, dir) {
+  const depth = 14;
+  const half = goalWidthPx / 2;
+  ctx.strokeStyle = '#eee';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(cx - half, dir > 0 ? lineY : lineY - depth, half * 2, depth);
 }
 
 function drawGrid() {
@@ -799,7 +891,7 @@ function onDown(evt) {
 
     render();
   } else {
-    const type = lineTypeSelect.value;
+    const type = selectedLineType;
     const p0 = maybeSnap(x, y);
     currentDraw = type === 'freehand'
       ? { type, color: selectedLineColor, points: [{ x, y }] }
@@ -1201,9 +1293,16 @@ document.getElementById('equipDeselect').addEventListener('click', () => {
   render();
 });
 
-// ---- 선 색상 패널 ----
+// ---- 선 종류 / 선 색상 패널 ----
+let selectedLineType = 'solid';
+const lineTypePanel = document.getElementById('lineTypePanel');
 const lineColorPanel = document.getElementById('lineColorPanel');
-const lineTypeSelect = document.getElementById('lineType');
+
+lineTypePanel.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('line-type-btn')) return;
+  selectedLineType = e.target.dataset.value;
+  lineTypePanel.querySelectorAll('.line-type-btn').forEach(b => b.classList.toggle('active', b === e.target));
+});
 
 function renderLineColorPanel() {
   lineColorPanel.innerHTML = LINE_PALETTE.map(c =>
@@ -1226,6 +1325,40 @@ gridToggleBtn.addEventListener('click', () => {
   render();
 });
 
+// ---- 필드 모드 (정규 축구장 / 하프 코트) ----
+const pitchModeSelect = document.getElementById('pitchModeSelect');
+const halfGoalSelect = document.getElementById('halfGoalSelect');
+const halfGoalGroup = document.getElementById('halfGoalGroup');
+
+function rescalePositions(oldW, oldH, newW, newH) {
+  if (oldW === newW && oldH === newH) return;
+  const sx = newW / oldW, sy = newH / oldH;
+  const scalePt = (p) => { p.x *= sx; p.y *= sy; };
+  state.teams.forEach(t => t.players.forEach(scalePt));
+  state.equipment.forEach(scalePt);
+  state.texts.forEach(scalePt);
+  state.arrows.forEach(a => a.points.forEach(scalePt));
+}
+
+function changePitchMode(mode, goalPos) {
+  const oldW = W, oldH = H;
+  state.pitchMode = mode;
+  state.halfGoalPos = goalPos;
+  setFieldGeometry();
+  rescalePositions(oldW, oldH, W, H);
+  halfGoalGroup.style.display = mode === 'half' ? 'flex' : 'none';
+  render();
+}
+
+function syncPitchModeUI() {
+  pitchModeSelect.value = state.pitchMode;
+  halfGoalSelect.value = state.halfGoalPos;
+  halfGoalGroup.style.display = state.pitchMode === 'half' ? 'flex' : 'none';
+}
+
+pitchModeSelect.addEventListener('change', (e) => changePitchMode(e.target.value, state.halfGoalPos));
+halfGoalSelect.addEventListener('change', (e) => changePitchMode(state.pitchMode, e.target.value));
+
 // ---- 구역 표시 ----
 const lengthZoneSelect = document.getElementById('lengthZoneSelect');
 const widthZoneSelect = document.getElementById('widthZoneSelect');
@@ -1234,6 +1367,7 @@ function syncZoneSelects() {
   lengthZoneSelect.value = String(state.zones.lengthZones);
   widthZoneSelect.value = String(state.zones.widthZones);
   gridToggleBtn.classList.toggle('active', state.showGrid);
+  syncPitchModeUI();
 }
 
 lengthZoneSelect.addEventListener('change', (e) => {
@@ -1314,6 +1448,7 @@ document.getElementById('clearArrowsBtn').addEventListener('click', () => {
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (!confirm('선수, 용품, 그림, 텍스트를 모두 초기 상태로 되돌릴까요?')) return;
   initState();
+  setFieldGeometry();
   history = [];
   selectedEquipId = null;
   renderTeamsPanel();
@@ -1380,6 +1515,7 @@ savesList.addEventListener('click', (e) => {
   if (e.target.dataset.action === 'loadSave') {
     state = item.data;
     ensureStateDefaults();
+    setFieldGeometry();
     idCounter = Date.now();
     cascadeCounter = 0;
     history = [];
@@ -1397,6 +1533,7 @@ savesList.addEventListener('click', (e) => {
 
 // ---- 초기화 ----
 initState();
+setFieldGeometry();
 renderTeamsPanel();
 renderEquipmentPanel();
 renderLineColorPanel();
