@@ -686,6 +686,12 @@ function getPos(evt) {
   return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
 }
 
+function getClientXY(evt) {
+  const t = evt.touches && evt.touches[0] ? evt.touches[0]
+    : (evt.changedTouches && evt.changedTouches[0] ? evt.changedTouches[0] : evt);
+  return { clientX: t.clientX, clientY: t.clientY };
+}
+
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
@@ -699,6 +705,61 @@ function switchTab(name) {
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
+
+// ---- 삭제 공통 로직 (더블클릭 / 길게 누르기 / 삭제 영역 드롭에서 공용) ----
+function deleteTarget(t) {
+  if (t.kind === 'player') {
+    const team = state.teams[t.teamIndex];
+    team.players = team.players.filter(p => p.id !== t.ref.id);
+    renumberTeam(team);
+    renderTeamsPanel();
+  } else if (t.kind === 'equipment') {
+    if (selectedEquipId === t.ref.id) { selectedEquipId = null; updateEquipControlsVisibility(); }
+    state.equipment = state.equipment.filter(e => e.id !== t.ref.id);
+  } else if (t.kind === 'text') {
+    state.texts = state.texts.filter(x2 => x2.id !== t.ref.id);
+    renderTextList();
+  }
+}
+
+function deleteAt(x, y) {
+  const t = findTargetAt(x, y);
+  if (t) {
+    deleteTarget(t);
+    render();
+    return true;
+  }
+  const ai = findArrowIndexAt(x, y);
+  if (ai >= 0) {
+    pushHistory();
+    state.arrows.splice(ai, 1);
+    render();
+    return true;
+  }
+  return false;
+}
+
+// ---- 삭제 영역 (드래그해서 끌어다 놓으면 삭제) ----
+const trashZone = document.getElementById('trashZone');
+
+function pointInRect(px, py, rect) {
+  return px >= rect.left && px <= rect.right && py >= rect.top && py <= rect.bottom;
+}
+
+function isOverTrash(clientX, clientY) {
+  if (!trashZone.classList.contains('active')) return false;
+  return pointInRect(clientX, clientY, trashZone.getBoundingClientRect());
+}
+
+// ---- 길게 누르기 (터치에서 더블클릭 대신 삭제) ----
+let longPressTimer = null;
+let longPressStart = null;
+
+function cancelLongPress() {
+  clearTimeout(longPressTimer);
+  longPressTimer = null;
+  longPressStart = null;
+}
 
 // ---- 포인터 이벤트 ----
 function onDown(evt) {
@@ -715,6 +776,27 @@ function onDown(evt) {
       selectedEquipId = null;
     }
     updateEquipControlsVisibility();
+
+    if (dragTarget) {
+      trashZone.classList.add('active');
+    }
+
+    if (evt.touches) {
+      const { clientX, clientY } = getClientXY(evt);
+      longPressStart = { clientX, clientY, x, y };
+      clearTimeout(longPressTimer);
+      longPressTimer = setTimeout(() => {
+        if (!longPressStart) return;
+        const deleted = deleteAt(longPressStart.x, longPressStart.y);
+        if (deleted) {
+          dragTarget = null;
+          isPointerDown = false;
+          trashZone.classList.remove('active', 'hover');
+        }
+        longPressStart = null;
+      }, 550);
+    }
+
     render();
   } else {
     const type = lineTypeSelect.value;
@@ -730,7 +812,17 @@ function onMove(evt) {
   evt.preventDefault();
   const { x, y } = getPos(evt);
 
+  if (longPressStart) {
+    const { clientX, clientY } = getClientXY(evt);
+    if (Math.hypot(clientX - longPressStart.clientX, clientY - longPressStart.clientY) > 8) {
+      cancelLongPress();
+    }
+  }
+
   if (mode === 'move' && dragTarget) {
+    const { clientX, clientY } = getClientXY(evt);
+    trashZone.classList.toggle('hover', isOverTrash(clientX, clientY));
+
     const snapped = maybeSnap(clamp(x, 10, W - 10), clamp(y, 10, H - 10));
     dragTarget.ref.x = snapped.x;
     dragTarget.ref.y = snapped.y;
@@ -746,9 +838,18 @@ function onMove(evt) {
   }
 }
 
-function onUp() {
+function onUp(evt) {
   if (!isPointerDown) return;
   isPointerDown = false;
+  cancelLongPress();
+
+  if (mode === 'move' && dragTarget) {
+    const { clientX, clientY } = getClientXY(evt);
+    if (isOverTrash(clientX, clientY)) {
+      deleteTarget(dragTarget);
+    }
+  }
+  trashZone.classList.remove('active', 'hover');
 
   if (mode === 'draw' && currentDraw) {
     let valid;
@@ -774,33 +875,12 @@ window.addEventListener('mouseup', onUp);
 canvas.addEventListener('touchstart', onDown, { passive: false });
 canvas.addEventListener('touchmove', onMove, { passive: false });
 window.addEventListener('touchend', onUp);
+window.addEventListener('touchcancel', onUp);
 
 canvas.addEventListener('dblclick', (evt) => {
   if (mode !== 'move') return;
   const { x, y } = getPos(evt);
-  const t = findTargetAt(x, y);
-  if (t) {
-    if (t.kind === 'player') {
-      const team = state.teams[t.teamIndex];
-      team.players = team.players.filter(p => p.id !== t.ref.id);
-      renumberTeam(team);
-      renderTeamsPanel();
-    } else if (t.kind === 'equipment') {
-      if (selectedEquipId === t.ref.id) { selectedEquipId = null; updateEquipControlsVisibility(); }
-      state.equipment = state.equipment.filter(e => e.id !== t.ref.id);
-    } else if (t.kind === 'text') {
-      state.texts = state.texts.filter(x2 => x2.id !== t.ref.id);
-      renderTextList();
-    }
-    render();
-    return;
-  }
-  const ai = findArrowIndexAt(x, y);
-  if (ai >= 0) {
-    pushHistory();
-    state.arrows.splice(ai, 1);
-    render();
-  }
+  deleteAt(x, y);
 });
 
 // ---- 아이템 배치 공통 로직 (데스크톱 드래그 앤 드롭 + 모바일 터치 드래그 공용) ----

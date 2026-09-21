@@ -187,6 +187,34 @@ input[type="text"] {
   color: #fff;
 }
 
+.trash-zone {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: #b71c1c;
+  color: #fff;
+  padding: 14px 24px;
+  border-radius: 30px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  z-index: 9998;
+  display: none;
+  pointer-events: none;
+  transition: transform 0.12s, background 0.12s;
+  white-space: nowrap;
+}
+
+.trash-zone.active {
+  display: block;
+}
+
+.trash-zone.hover {
+  background: #e53935;
+  transform: translateX(-50%) scale(1.18);
+}
+
 .touch-ghost {
   position: fixed;
   left: 0;
