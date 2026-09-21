@@ -1,0 +1,1326 @@
+// ===== 전자 축구작전판 =====
+
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+
+// ---- 정식 규격 축구장 (FIFA 권장: 길이 105m x 폭 68m) ----
+const SCALE = 8; // px per meter
+const PITCH = {
+  len: 105, wid: 68,
+  penaltyDepth: 16.5, penaltyWidth: 40.32,
+  goalAreaDepth: 5.5, goalAreaWidth: 18.32,
+  penaltySpot: 11, centerCircle: 9.15,
+  cornerArc: 0.9144, goalWidth: 7.32,
+};
+
+const fieldW = PITCH.len * SCALE;
+const fieldH = PITCH.wid * SCALE;
+const field = { left: 50, top: 50, right: 50 + fieldW, bottom: 50 + fieldH };
+const fieldCenterX = (field.left + field.right) / 2;
+const fieldCenterY = (field.top + field.bottom) / 2;
+
+const boxDepthPx = PITCH.penaltyDepth * SCALE;
+const boxWidthPx = PITCH.penaltyWidth * SCALE;
+const smallBoxDepthPx = PITCH.goalAreaDepth * SCALE;
+const smallBoxWidthPx = PITCH.goalAreaWidth * SCALE;
+const penaltySpotPx = PITCH.penaltySpot * SCALE;
+const centerCirclePx = PITCH.centerCircle * SCALE;
+const cornerArcPx = PITCH.cornerArc * SCALE;
+const goalWidthPx = PITCH.goalWidth * SCALE;
+const penaltyArcHalfAngle = Math.acos((boxDepthPx - penaltySpotPx) / centerCirclePx);
+
+const GOAL_BASE_W = 54, GOAL_BASE_H = 28;
+const PLAYER_R = 13;
+const EQUIP_R = { ball: 12, marker: 12, cone: 14, mannequin: 17, pole: 10, goal: Math.hypot(GOAL_BASE_W, GOAL_BASE_H) / 2 + 4 };
+const GRID_SIZE = 20;
+
+const TEAM_PALETTE = ['#e53935', '#1e88e5', '#fdd835', '#43a047', '#8e24aa', '#fb8c00', '#00acc1', '#d81b60'];
+const EQUIP_PALETTE = ['#ffffff', '#fdd835', '#fb8c00', '#e53935', '#212121'];
+const LINE_PALETTE = ['#ffeb3b', '#ffffff', '#e53935', '#212121'];
+const MAX_TEAMS = TEAM_PALETTE.length;
+
+const EQUIP_TYPES = [
+  { type: 'ball', label: '⚽ 축구공' },
+  { type: 'marker', label: '🔶 마커' },
+  { type: 'cone', label: '🔺 콘' },
+  { type: 'mannequin', label: '🧍 더미 마네킹' },
+  { type: 'pole', label: '🟨 폴' },
+  { type: 'goal', label: '🥅 골대' },
+];
+
+// ---- 포메이션 정의 ----
+const FORMATIONS = {
+  442: [
+    [0.05, 0.5],
+    [0.22, 0.15], [0.22, 0.38], [0.22, 0.62], [0.22, 0.85],
+    [0.5, 0.15], [0.5, 0.38], [0.5, 0.62], [0.5, 0.85],
+    [0.78, 0.35], [0.78, 0.65],
+  ],
+  433: [
+    [0.05, 0.5],
+    [0.22, 0.15], [0.22, 0.38], [0.22, 0.62], [0.22, 0.85],
+    [0.48, 0.25], [0.48, 0.5], [0.48, 0.75],
+    [0.78, 0.2], [0.78, 0.5], [0.78, 0.8],
+  ],
+  352: [
+    [0.05, 0.5],
+    [0.22, 0.25], [0.22, 0.5], [0.22, 0.75],
+    [0.5, 0.1], [0.5, 0.3], [0.5, 0.5], [0.5, 0.7], [0.5, 0.9],
+    [0.8, 0.35], [0.8, 0.65],
+  ],
+  4231: [
+    [0.05, 0.5],
+    [0.2, 0.15], [0.2, 0.38], [0.2, 0.62], [0.2, 0.85],
+    [0.4, 0.35], [0.4, 0.65],
+    [0.62, 0.2], [0.62, 0.5], [0.62, 0.8],
+    [0.85, 0.5],
+  ],
+  532: [
+    [0.05, 0.5],
+    [0.18, 0.1], [0.18, 0.3], [0.18, 0.5], [0.18, 0.7], [0.18, 0.9],
+    [0.5, 0.25], [0.5, 0.5], [0.5, 0.75],
+    [0.8, 0.35], [0.8, 0.65],
+  ],
+};
+const FORMATION_LABELS = { 442: '4-4-2', 433: '4-3-3', 352: '3-5-2', 4231: '4-2-3-1', 532: '5-3-2' };
+const FORMATION_KEYS = Object.keys(FORMATIONS);
+
+const MAX_PLAYERS = 40;
+
+// ---- id / 배치 위치 ----
+let idCounter = 0;
+function nextId() { return 'id' + (idCounter++); }
+
+let cascadeCounter = 0;
+function cascadePos() {
+  const i = cascadeCounter++;
+  const angle = i * 0.9;
+  const radius = 20 + (i % 8) * 14;
+  return {
+    x: clamp(fieldCenterX + Math.cos(angle) * radius, field.left + 20, field.right - 20),
+    y: clamp(fieldCenterY + Math.sin(angle) * radius, field.top + 20, field.bottom - 20),
+  };
+}
+
+function formationToPlayers(key, side) {
+  const positions = FORMATIONS[key];
+  return positions.map((pos, i) => {
+    const [relX, relY] = pos;
+    const x = side === 'L' ? field.left + relX * (fieldW / 2) : field.right - relX * (fieldW / 2);
+    const y = field.top + relY * fieldH;
+    return { id: nextId(), num: i + 1, x, y };
+  });
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ---- 상태 ----
+let state;
+let equipSelectedColor = { ball: '#ffffff', marker: '#fdd835', cone: '#fb8c00', mannequin: '#212121', pole: '#fdd835', goal: '#ffffff' };
+let selectedLineColor = LINE_PALETTE[0];
+let selectedEquipId = null;
+
+function initState() {
+  idCounter = 0;
+  cascadeCounter = 0;
+  state = { teams: [], equipment: [], arrows: [], texts: [], zones: { lengthZones: 0, widthZones: 0 }, showGrid: false };
+}
+
+function ensureStateDefaults() {
+  if (!state.zones) state.zones = { lengthZones: 0, widthZones: 0 };
+  if (!state.texts) state.texts = [];
+  if (typeof state.showGrid !== 'boolean') state.showGrid = false;
+  state.teams.forEach(t => { if (!t.id) t.id = nextId(); });
+}
+
+let mode = 'move'; // 'move' | 'draw'
+let dragTarget = null;
+let currentDraw = null;
+let history = [];
+let isPointerDown = false;
+
+// ---- 색상 유틸 ----
+function shadeColor(hex, percent) {
+  const num = parseInt(hex.slice(1), 16);
+  let r = (num >> 16) + Math.round(255 * percent);
+  let g = ((num >> 8) & 0xff) + Math.round(255 * percent);
+  let b = (num & 0xff) + Math.round(255 * percent);
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+  return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+}
+
+function drawShadow(cx, cy, rx, ry) {
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.fill();
+}
+
+function roundRectPath(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// ---- 격자 스냅 ----
+function snapVal(v) { return Math.round(v / GRID_SIZE) * GRID_SIZE; }
+function maybeSnap(x, y) {
+  return state.showGrid ? { x: snapVal(x), y: snapVal(y) } : { x, y };
+}
+
+// ---- 대상 검색 ----
+function equipRadius(e) {
+  return EQUIP_R[e.type] * (e.scale || 1);
+}
+
+function allTargets() {
+  const arr = [];
+  state.teams.forEach((team, ti) => {
+    team.players.forEach(p => arr.push({ ref: p, kind: 'player', teamIndex: ti, r: PLAYER_R }));
+  });
+  state.equipment.forEach(e => arr.push({ ref: e, kind: 'equipment', type: e.type, r: equipRadius(e) }));
+  state.texts.forEach(t => arr.push({ ref: t, kind: 'text', r: Math.max(16, (t._w || 30) / 2 + 6) }));
+  return arr;
+}
+
+function findTargetAt(x, y) {
+  const all = allTargets();
+  for (let i = all.length - 1; i >= 0; i--) {
+    const t = all[i];
+    const d = Math.hypot(t.ref.x - x, t.ref.y - y);
+    if (d <= t.r + 4) return t;
+  }
+  return null;
+}
+
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const cx = ax + t * dx, cy = ay + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+function findArrowIndexAt(x, y) {
+  for (let i = state.arrows.length - 1; i >= 0; i--) {
+    const pts = state.arrows[i].points;
+    for (let j = 0; j < pts.length - 1; j++) {
+      if (distToSegment(x, y, pts[j].x, pts[j].y, pts[j + 1].x, pts[j + 1].y) <= 7) return i;
+    }
+  }
+  return -1;
+}
+
+function renumberTeam(team) {
+  team.players.forEach((p, idx) => { p.num = idx + 1; });
+}
+
+function findTeam(id) {
+  return state.teams.find(t => t.id === id);
+}
+
+// ---- 필드 그리기 ----
+function drawField() {
+  ctx.fillStyle = '#1b1f24';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#2e7d32';
+  ctx.fillRect(field.left, field.top, fieldW, fieldH);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.035)';
+  const stripes = 14;
+  const stripeW = fieldW / stripes;
+  for (let i = 0; i < stripes; i++) {
+    if (i % 2 === 0) ctx.fillRect(field.left + i * stripeW, field.top, stripeW, fieldH);
+  }
+
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(field.left, field.top, fieldW, fieldH);
+
+  ctx.beginPath();
+  ctx.moveTo(fieldCenterX, field.top);
+  ctx.lineTo(fieldCenterX, field.bottom);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(fieldCenterX, fieldCenterY, centerCirclePx, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(fieldCenterX, fieldCenterY, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+
+  ctx.strokeRect(field.left, fieldCenterY - boxWidthPx / 2, boxDepthPx, boxWidthPx);
+  ctx.strokeRect(field.left, fieldCenterY - smallBoxWidthPx / 2, smallBoxDepthPx, smallBoxWidthPx);
+  ctx.beginPath();
+  ctx.arc(field.left + penaltySpotPx, fieldCenterY, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(field.left + penaltySpotPx, fieldCenterY, centerCirclePx, -penaltyArcHalfAngle, penaltyArcHalfAngle);
+  ctx.stroke();
+
+  ctx.strokeRect(field.right - boxDepthPx, fieldCenterY - boxWidthPx / 2, boxDepthPx, boxWidthPx);
+  ctx.strokeRect(field.right - smallBoxDepthPx, fieldCenterY - smallBoxWidthPx / 2, smallBoxDepthPx, smallBoxWidthPx);
+  ctx.beginPath();
+  ctx.arc(field.right - penaltySpotPx, fieldCenterY, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(field.right - penaltySpotPx, fieldCenterY, centerCirclePx, Math.PI - penaltyArcHalfAngle, Math.PI + penaltyArcHalfAngle);
+  ctx.stroke();
+
+  [[field.left, field.top, 0, 0.5], [field.right, field.top, 0.5, 1], [field.left, field.bottom, -0.5, 0], [field.right, field.bottom, 1, 1.5]].forEach(([cx, cy, a0, a1]) => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, cornerArcPx, a0 * Math.PI, a1 * Math.PI);
+    ctx.stroke();
+  });
+
+  drawGoalMouth(field.left, fieldCenterY, -1);
+  drawGoalMouth(field.right, fieldCenterY, 1);
+}
+
+function drawGoalMouth(lineX, cy, dir) {
+  const depth = 14;
+  const half = goalWidthPx / 2;
+  ctx.strokeStyle = '#eee';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(dir > 0 ? lineX : lineX - depth, cy - half, depth, half * 2);
+}
+
+function drawGrid() {
+  if (!state.showGrid) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 3]);
+  for (let x = field.left; x <= field.right; x += GRID_SIZE) {
+    ctx.beginPath();
+    ctx.moveTo(x, field.top);
+    ctx.lineTo(x, field.bottom);
+    ctx.stroke();
+  }
+  for (let y = field.top; y <= field.bottom; y += GRID_SIZE) {
+    ctx.beginPath();
+    ctx.moveTo(field.left, y);
+    ctx.lineTo(field.right, y);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawZones() {
+  const { lengthZones, widthZones } = state.zones;
+  if (!lengthZones && !widthZones) return;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,80,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([7, 6]);
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+
+  if (lengthZones >= 3) {
+    const labels = lengthZones === 3 ? ['수비', '미들', '공격'] : Array.from({ length: lengthZones }, (_, i) => `구역${i + 1}`);
+    for (let i = 1; i < lengthZones; i++) {
+      const lx = field.left + (fieldW * i) / lengthZones;
+      ctx.beginPath();
+      ctx.moveTo(lx, field.top);
+      ctx.lineTo(lx, field.bottom);
+      ctx.stroke();
+    }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let i = 0; i < lengthZones; i++) {
+      const cx = field.left + (fieldW * (i + 0.5)) / lengthZones;
+      ctx.fillText(labels[i], cx, field.top + 6);
+    }
+  }
+
+  if (widthZones >= 3) {
+    const labels = widthZones === 3 ? ['왼쪽', '중앙', '오른쪽'] : Array.from({ length: widthZones }, (_, i) => `구역${i + 1}`);
+    for (let i = 1; i < widthZones; i++) {
+      const ly = field.top + (fieldH * i) / widthZones;
+      ctx.beginPath();
+      ctx.moveTo(field.left, ly);
+      ctx.lineTo(field.right, ly);
+      ctx.stroke();
+    }
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < widthZones; i++) {
+      const cy = field.top + (fieldH * (i + 0.5)) / widthZones;
+      ctx.fillText(labels[i], field.left + 6, cy);
+    }
+  }
+
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawLine(arrow) {
+  const pts = arrow.points;
+  if (pts.length < 2) return;
+  ctx.strokeStyle = arrow.color;
+  ctx.fillStyle = arrow.color;
+  ctx.lineWidth = 3;
+  ctx.setLineDash(arrow.type === 'dashed' ? [10, 8] : []);
+  ctx.beginPath();
+  pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const p1 = pts[pts.length - 2];
+  const p2 = pts[pts.length - 1];
+  const headLen = 12;
+  const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+  ctx.beginPath();
+  ctx.moveTo(p2.x, p2.y);
+  ctx.lineTo(p2.x - headLen * Math.cos(angle - Math.PI / 6), p2.y - headLen * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(p2.x - headLen * Math.cos(angle + Math.PI / 6), p2.y - headLen * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawPlayer(p, color) {
+  drawShadow(p.x, p.y + PLAYER_R * 0.75, PLAYER_R * 0.9, PLAYER_R * 0.35);
+  const grad = ctx.createRadialGradient(p.x - 4, p.y - 4, 2, p.x, p.y, PLAYER_R);
+  grad.addColorStop(0, shadeColor(color, 0.35));
+  grad.addColorStop(1, shadeColor(color, -0.15));
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#fff';
+  ctx.stroke();
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(p.num, p.x, p.y);
+}
+
+function drawRegularPolygon(cx, cy, radius, sides, rotation) {
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const ang = rotation + (i * 2 * Math.PI) / sides;
+    const px = cx + radius * Math.cos(ang);
+    const py = cy + radius * Math.sin(ang);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function colorLuminance(hex) {
+  const num = parseInt(hex.slice(1), 16);
+  const r = (num >> 16) & 0xff, g = (num >> 8) & 0xff, b = num & 0xff;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+// 전형적인 축구공 디자인: 흰/검정 오각형 패턴 + 입체감 있는 구형 음영
+function drawBallShape(x, y, color) {
+  const r = EQUIP_R.ball - 2;
+  drawShadow(x, y + r * 0.8, r * 0.9, r * 0.3);
+
+  const grad = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.12, x, y, r * 1.1);
+  grad.addColorStop(0, shadeColor(color, 0.55));
+  grad.addColorStop(0.55, color);
+  grad.addColorStop(1, shadeColor(color, -0.4));
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.stroke();
+
+  const isLight = colorLuminance(color) > 0.5;
+  const patternColor = isLight ? 'rgba(20,20,20,0.92)' : 'rgba(245,245,245,0.92)';
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = patternColor;
+
+  const pentR = r * 0.42;
+  drawRegularPolygon(x, y, pentR, 5, -Math.PI / 2);
+
+  for (let i = 0; i < 5; i++) {
+    const edgeAng = -Math.PI / 2 + Math.PI / 5 + (i * 2 * Math.PI) / 5;
+    const dist = pentR * 1.62;
+    const px = x + Math.cos(edgeAng) * dist;
+    const py = y + Math.sin(edgeAng) * dist;
+    drawRegularPolygon(px, py, pentR * 0.94, 5, edgeAng + Math.PI / 2);
+  }
+  ctx.restore();
+}
+
+function drawMarkerShape(x, y, color) {
+  drawShadow(x, y + 3, 11, 3.5);
+  const grad = ctx.createLinearGradient(x, y - 4, x, y + 4);
+  grad.addColorStop(0, shadeColor(color, 0.35));
+  grad.addColorStop(1, shadeColor(color, -0.2));
+  ctx.beginPath();
+  ctx.ellipse(x, y, 10, 4, 0, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(x, y - 1, 6.5, 1.8, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function drawConeShape(x, y, color) {
+  const topY = y - 11, baseY = y + 9, baseW = 9, topW = 2;
+  drawShadow(x, baseY + 1, baseW + 2, 3.2);
+  const grad = ctx.createLinearGradient(x - baseW, y, x + baseW, y);
+  grad.addColorStop(0, shadeColor(color, -0.25));
+  grad.addColorStop(0.5, shadeColor(color, 0.25));
+  grad.addColorStop(1, shadeColor(color, -0.25));
+  ctx.beginPath();
+  ctx.moveTo(x - topW, topY);
+  ctx.lineTo(x + topW, topY);
+  ctx.lineTo(x + baseW, baseY);
+  ctx.lineTo(x - baseW, baseY);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  const stripeY = topY + (baseY - topY) * 0.55;
+  const stripeHalfW = topW + (baseW - topW) * 0.45;
+  ctx.fillRect(x - stripeHalfW, stripeY - 2, stripeHalfW * 2, 3.5);
+
+  ctx.beginPath();
+  ctx.ellipse(x, baseY, baseW, 3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = shadeColor(color, -0.3);
+  ctx.fill();
+}
+
+function drawMannequinShape(x, y, color) {
+  drawShadow(x, y + 16, 12, 4);
+  ctx.beginPath();
+  ctx.ellipse(x, y + 14, 10, 4, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#222';
+  ctx.fill();
+
+  const grad = ctx.createLinearGradient(x - 7, y, x + 7, y);
+  grad.addColorStop(0, shadeColor(color, -0.2));
+  grad.addColorStop(0.5, shadeColor(color, 0.25));
+  grad.addColorStop(1, shadeColor(color, -0.2));
+  roundRectPath(x - 7, y - 6, 14, 20, 5);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.stroke();
+
+  ctx.strokeStyle = shadeColor(color, -0.15);
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x - 7, y - 2); ctx.lineTo(x - 12, y + 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 7, y - 2); ctx.lineTo(x + 12, y + 8); ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(x, y - 12, 6, 0, Math.PI * 2);
+  ctx.fillStyle = shadeColor(color, 0.15);
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.stroke();
+}
+
+function drawPoleShape(x, y, color) {
+  drawShadow(x, y + 15, 7, 3);
+  ctx.beginPath();
+  ctx.ellipse(x, y + 14, 6, 3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#333';
+  ctx.fill();
+
+  const grad = ctx.createLinearGradient(x - 2, y, x + 2, y);
+  grad.addColorStop(0, shadeColor(color, -0.3));
+  grad.addColorStop(0.5, shadeColor(color, 0.35));
+  grad.addColorStop(1, shadeColor(color, -0.3));
+  ctx.fillStyle = grad;
+  ctx.fillRect(x - 2, y - 18, 4, 32);
+  ctx.lineWidth = 0.75;
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.strokeRect(x - 2, y - 18, 4, 32);
+
+  ctx.beginPath();
+  ctx.arc(x, y - 18, 3, 0, Math.PI * 2);
+  ctx.fillStyle = shadeColor(color, 0.4);
+  ctx.fill();
+}
+
+function drawGoalShape(x, y, color, w, h, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot || 0);
+
+  drawShadow(0, h / 2 + 3, w / 2 + 4, 5);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-w / 2, -h / 2, w, h);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1;
+  for (let i = -h; i < w; i += 7) {
+    ctx.beginPath();
+    ctx.moveTo(-w / 2 + i, -h / 2);
+    ctx.lineTo(-w / 2 + i + h, h / 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-w / 2 + i + h, -h / 2);
+    ctx.lineTo(-w / 2 + i, h / 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  const postGrad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+  postGrad.addColorStop(0, shadeColor(color, 0.5));
+  postGrad.addColorStop(0.5, color);
+  postGrad.addColorStop(1, shadeColor(color, -0.3));
+  ctx.strokeStyle = postGrad;
+  ctx.lineWidth = 4;
+  ctx.lineJoin = 'round';
+  ctx.strokeRect(-w / 2, -h / 2, w, h);
+
+  ctx.restore();
+}
+
+function drawEquipmentItem(e) {
+  const s = e.scale || 1;
+  ctx.save();
+  if (s !== 1) {
+    ctx.translate(e.x, e.y);
+    ctx.scale(s, s);
+    ctx.translate(-e.x, -e.y);
+  }
+  if (e.type === 'ball') drawBallShape(e.x, e.y, e.color);
+  else if (e.type === 'marker') drawMarkerShape(e.x, e.y, e.color);
+  else if (e.type === 'cone') drawConeShape(e.x, e.y, e.color);
+  else if (e.type === 'mannequin') drawMannequinShape(e.x, e.y, e.color);
+  else if (e.type === 'pole') drawPoleShape(e.x, e.y, e.color);
+  else if (e.type === 'goal') drawGoalShape(e.x, e.y, e.color, GOAL_BASE_W, GOAL_BASE_H, e.rot || 0);
+  ctx.restore();
+}
+
+function drawSelectionOutline(e) {
+  const s = e.scale || 1;
+  ctx.save();
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 3]);
+  if (e.type === 'goal') {
+    ctx.translate(e.x, e.y);
+    ctx.rotate(e.rot || 0);
+    const w = GOAL_BASE_W * s, h = GOAL_BASE_H * s;
+    ctx.strokeRect(-w / 2 - 4, -h / 2 - 4, w + 8, h + 8);
+  } else {
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, equipRadius(e) + 3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawText(t) {
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  t._w = ctx.measureText(t.text).width;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.strokeText(t.text, t.x, t.y);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(t.text, t.x, t.y);
+}
+
+function render() {
+  drawField();
+  drawGrid();
+  drawZones();
+  state.arrows.forEach(a => drawLine(a));
+  if (currentDraw) drawLine(currentDraw);
+  state.equipment.forEach(e => drawEquipmentItem(e));
+  if (selectedEquipId) {
+    const sel = state.equipment.find(e => e.id === selectedEquipId);
+    if (sel) drawSelectionOutline(sel);
+  }
+  state.teams.forEach(team => team.players.forEach(p => drawPlayer(p, team.color)));
+  state.texts.forEach(t => drawText(t));
+}
+
+// ---- 좌표 변환 ----
+function getPos(evt) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+  const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+  return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+// ---- 탭 전환 ----
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+// ---- 포인터 이벤트 ----
+function onDown(evt) {
+  evt.preventDefault();
+  const { x, y } = getPos(evt);
+  isPointerDown = true;
+
+  if (mode === 'move') {
+    dragTarget = findTargetAt(x, y);
+    if (dragTarget && dragTarget.kind === 'equipment') {
+      selectedEquipId = dragTarget.ref.id;
+      switchTab('equip');
+    } else {
+      selectedEquipId = null;
+    }
+    updateEquipControlsVisibility();
+    render();
+  } else {
+    const type = lineTypeSelect.value;
+    const p0 = maybeSnap(x, y);
+    currentDraw = type === 'freehand'
+      ? { type, color: selectedLineColor, points: [{ x, y }] }
+      : { type, color: selectedLineColor, points: [p0, p0] };
+  }
+}
+
+function onMove(evt) {
+  if (!isPointerDown) return;
+  evt.preventDefault();
+  const { x, y } = getPos(evt);
+
+  if (mode === 'move' && dragTarget) {
+    const snapped = maybeSnap(clamp(x, 10, W - 10), clamp(y, 10, H - 10));
+    dragTarget.ref.x = snapped.x;
+    dragTarget.ref.y = snapped.y;
+    render();
+  } else if (mode === 'draw' && currentDraw) {
+    if (currentDraw.type === 'freehand') {
+      const last = currentDraw.points[currentDraw.points.length - 1];
+      if (Math.hypot(x - last.x, y - last.y) > 4) currentDraw.points.push({ x, y });
+    } else {
+      currentDraw.points[1] = maybeSnap(x, y);
+    }
+    render();
+  }
+}
+
+function onUp() {
+  if (!isPointerDown) return;
+  isPointerDown = false;
+
+  if (mode === 'draw' && currentDraw) {
+    let valid;
+    if (currentDraw.type === 'freehand') {
+      valid = currentDraw.points.length >= 2;
+    } else {
+      const [p1, p2] = currentDraw.points;
+      valid = Math.hypot(p2.x - p1.x, p2.y - p1.y) > 10;
+    }
+    if (valid) {
+      pushHistory();
+      state.arrows.push(currentDraw);
+    }
+    currentDraw = null;
+  }
+  dragTarget = null;
+  render();
+}
+
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+canvas.addEventListener('touchstart', onDown, { passive: false });
+canvas.addEventListener('touchmove', onMove, { passive: false });
+window.addEventListener('touchend', onUp);
+
+canvas.addEventListener('dblclick', (evt) => {
+  if (mode !== 'move') return;
+  const { x, y } = getPos(evt);
+  const t = findTargetAt(x, y);
+  if (t) {
+    if (t.kind === 'player') {
+      const team = state.teams[t.teamIndex];
+      team.players = team.players.filter(p => p.id !== t.ref.id);
+      renumberTeam(team);
+      renderTeamsPanel();
+    } else if (t.kind === 'equipment') {
+      if (selectedEquipId === t.ref.id) { selectedEquipId = null; updateEquipControlsVisibility(); }
+      state.equipment = state.equipment.filter(e => e.id !== t.ref.id);
+    } else if (t.kind === 'text') {
+      state.texts = state.texts.filter(x2 => x2.id !== t.ref.id);
+      renderTextList();
+    }
+    render();
+    return;
+  }
+  const ai = findArrowIndexAt(x, y);
+  if (ai >= 0) {
+    pushHistory();
+    state.arrows.splice(ai, 1);
+    render();
+  }
+});
+
+// ---- 아이템 배치 공통 로직 (데스크톱 드래그 앤 드롭 + 모바일 터치 드래그 공용) ----
+function placeItemAt(data, x, y) {
+  const snapped = maybeSnap(clamp(x, 10, W - 10), clamp(y, 10, H - 10));
+  if (data.kind === 'player') {
+    if (totalPlayers() >= MAX_PLAYERS) {
+      alert('선수는 최대 ' + MAX_PLAYERS + '명까지 배치할 수 있어요.');
+      return;
+    }
+    const team = findTeam(data.teamId);
+    if (!team) return;
+    team.players.push({ id: nextId(), num: team.players.length + 1, x: snapped.x, y: snapped.y });
+    renderTeamsPanel();
+  } else if (data.kind === 'equipment') {
+    const item = { id: nextId(), type: data.type, color: equipSelectedColor[data.type], x: snapped.x, y: snapped.y };
+    if (data.type === 'goal') item.rot = 0;
+    state.equipment.push(item);
+  }
+  render();
+}
+
+// ---- 팔레트 -> 필드 드래그 앤 드롭 (데스크톱, 마우스) ----
+canvas.addEventListener('dragover', (e) => e.preventDefault());
+canvas.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const raw = e.dataTransfer.getData('text/plain');
+  if (!raw) return;
+  let data;
+  try { data = JSON.parse(raw); } catch (err) { return; }
+  const { x, y } = getPos(e);
+  placeItemAt(data, x, y);
+});
+
+// ---- 팔레트 -> 필드 터치 드래그 (아이패드/휴대폰) ----
+let touchDragData = null;
+let ghostEl = null;
+
+function moveGhost(clientX, clientY) {
+  if (!ghostEl) return;
+  ghostEl.style.left = clientX + 'px';
+  ghostEl.style.top = clientY + 'px';
+}
+
+function startTouchDrag(payload, label, touch) {
+  touchDragData = payload;
+  ghostEl = document.createElement('div');
+  ghostEl.className = 'touch-ghost';
+  ghostEl.textContent = label;
+  document.body.appendChild(ghostEl);
+  moveGhost(touch.clientX, touch.clientY);
+}
+
+function endTouchDrag(touch) {
+  if (!touchDragData) return;
+  const rect = canvas.getBoundingClientRect();
+  if (touch.clientX >= rect.left && touch.clientX <= rect.right && touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+    const scaleX = W / rect.width, scaleY = H / rect.height;
+    const x = (touch.clientX - rect.left) * scaleX;
+    const y = (touch.clientY - rect.top) * scaleY;
+    placeItemAt(touchDragData, x, y);
+  }
+  if (ghostEl) { ghostEl.remove(); ghostEl = null; }
+  touchDragData = null;
+}
+
+document.addEventListener('touchmove', (e) => {
+  if (!touchDragData) return;
+  e.preventDefault();
+  moveGhost(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: false });
+
+document.addEventListener('touchend', (e) => {
+  if (!touchDragData) return;
+  endTouchDrag(e.changedTouches[0]);
+});
+document.addEventListener('touchcancel', () => {
+  if (ghostEl) { ghostEl.remove(); ghostEl = null; }
+  touchDragData = null;
+});
+
+// ---- 되돌리기 ----
+function pushHistory() {
+  history.push(JSON.parse(JSON.stringify(state.arrows)));
+  if (history.length > 50) history.shift();
+}
+
+function undo() {
+  if (history.length === 0) {
+    if (state.arrows.length > 0) state.arrows.pop();
+  } else {
+    state.arrows = history.pop();
+  }
+  render();
+}
+
+// ---- 팀 패널 ----
+const teamsPanel = document.getElementById('teamsPanel');
+const totalCountEl = document.getElementById('totalCount');
+
+function renderTeamsPanel() {
+  if (state.teams.length === 0) {
+    teamsPanel.innerHTML = '<p class="empty-msg">아직 팀이 없습니다. 위의 "+ 팀 추가"를 눌러 팀을 만들어보세요.</p>';
+    totalCountEl.textContent = 0;
+    return;
+  }
+  teamsPanel.innerHTML = state.teams.map((team, i) => {
+    const swatches = TEAM_PALETTE.map(c =>
+      `<button class="swatch${c === team.color ? ' selected' : ''}" style="background:${c}" data-color="${c}"></button>`
+    ).join('');
+    const formOptions = FORMATION_KEYS.map(k => `<option value="${k}">${FORMATION_LABELS[k]}</option>`).join('');
+    return `<div class="team-row" data-team="${team.id}" style="border-left-color:${team.color}">
+      <div class="team-title">
+        <span>팀${i + 1}<span class="team-count"> · ${team.players.length}명</span></span>
+        <span class="team-title-right">
+          <button data-action="delTeam" class="small-btn team-del-btn" title="팀 삭제">✕</button>
+        </span>
+      </div>
+      <div class="swatch-row" data-role="teamColor">${swatches}</div>
+      <div class="row-actions">
+        <div class="drag-handle player-handle" draggable="true" style="background:${team.color}">선수 드래그</div>
+        <button data-action="addPlayer" class="small-btn">+ 선수</button>
+        <button data-action="removePlayer" class="small-btn">- 선수</button>
+      </div>
+      <div class="row-actions">
+        <select data-role="formationSelect">${formOptions}</select>
+        <button data-action="applyFormation" class="small-btn">배치</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  totalCountEl.textContent = totalPlayers();
+}
+
+function totalPlayers() {
+  return state.teams.reduce((s, t) => s + t.players.length, 0);
+}
+
+function addPlayerToTeam(id) {
+  if (totalPlayers() >= MAX_PLAYERS) {
+    alert('선수는 최대 ' + MAX_PLAYERS + '명까지 배치할 수 있어요.');
+    return;
+  }
+  const team = findTeam(id);
+  const pos = cascadePos();
+  team.players.push({ id: nextId(), num: team.players.length + 1, x: pos.x, y: pos.y });
+  renderTeamsPanel();
+  render();
+}
+
+function removePlayerFromTeam(id) {
+  const team = findTeam(id);
+  if (team.players.length === 0) return;
+  team.players.pop();
+  renderTeamsPanel();
+  render();
+}
+
+function applyFormationToTeam(id, key) {
+  const idx = state.teams.findIndex(t => t.id === id);
+  const side = idx % 2 === 0 ? 'L' : 'R';
+  state.teams[idx].players = formationToPlayers(key, side);
+  renderTeamsPanel();
+  render();
+}
+
+function addTeam() {
+  if (state.teams.length >= MAX_TEAMS) {
+    alert('팀은 최대 ' + MAX_TEAMS + '개까지 만들 수 있어요.');
+    return;
+  }
+  const used = state.teams.map(t => t.color);
+  const color = TEAM_PALETTE.find(c => !used.includes(c)) || TEAM_PALETTE[state.teams.length % TEAM_PALETTE.length];
+  state.teams.push({ id: nextId(), color, players: [] });
+  renderTeamsPanel();
+  render();
+}
+
+function removeTeam(id) {
+  const team = findTeam(id);
+  if (team && team.players.length > 0 && !confirm(`이 팀에 선수 ${team.players.length}명이 있어요. 팀을 삭제할까요?`)) return;
+  state.teams = state.teams.filter(t => t.id !== id);
+  renderTeamsPanel();
+  render();
+}
+
+document.getElementById('addTeamBtn').addEventListener('click', addTeam);
+
+teamsPanel.addEventListener('click', (e) => {
+  const row = e.target.closest('.team-row');
+  if (!row) return;
+  const id = row.dataset.team;
+
+  if (e.target.matches('.swatch')) {
+    findTeam(id).color = e.target.dataset.color;
+    renderTeamsPanel();
+    render();
+    return;
+  }
+
+  const action = e.target.dataset.action;
+  if (action === 'addPlayer') addPlayerToTeam(id);
+  else if (action === 'removePlayer') removePlayerFromTeam(id);
+  else if (action === 'delTeam') removeTeam(id);
+  else if (action === 'applyFormation') {
+    const sel = row.querySelector('[data-role="formationSelect"]');
+    applyFormationToTeam(id, sel.value);
+  }
+});
+
+teamsPanel.addEventListener('dragstart', (e) => {
+  if (!e.target.classList.contains('player-handle')) return;
+  const id = e.target.closest('.team-row').dataset.team;
+  e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'player', teamId: id }));
+  e.dataTransfer.effectAllowed = 'copy';
+});
+
+teamsPanel.addEventListener('touchstart', (e) => {
+  const handle = e.target.closest('.player-handle');
+  if (!handle) return;
+  e.preventDefault();
+  const id = handle.closest('.team-row').dataset.team;
+  startTouchDrag({ kind: 'player', teamId: id }, '선수', e.touches[0]);
+}, { passive: false });
+
+// ---- 용품 패널 ----
+const equipmentPanel = document.getElementById('equipmentPanel');
+const equipControls = document.getElementById('equipControls');
+const equipControlsTitle = document.getElementById('equipControlsTitle');
+const equipRotateBtn = document.getElementById('equipRotateBtn');
+
+function renderEquipmentPanel() {
+  equipmentPanel.innerHTML = EQUIP_TYPES.map(et => {
+    const swatches = EQUIP_PALETTE.map(c =>
+      `<button class="swatch${c === equipSelectedColor[et.type] ? ' selected' : ''}" style="background:${c}" data-color="${c}"></button>`
+    ).join('');
+    return `<div class="equip-row" data-type="${et.type}">
+      <div class="equip-title"><span class="equip-handle" draggable="true">${et.label}</span></div>
+      <div class="swatch-row" data-role="equipColor">${swatches}</div>
+      <div class="row-actions">
+        <button data-action="addEquip" class="small-btn">+ 추가</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function addEquipment(type) {
+  const pos = cascadePos();
+  const item = { id: nextId(), type, color: equipSelectedColor[type], x: pos.x, y: pos.y };
+  if (type === 'goal') item.rot = 0;
+  state.equipment.push(item);
+  render();
+}
+
+equipmentPanel.addEventListener('click', (e) => {
+  const row = e.target.closest('.equip-row');
+  if (!row) return;
+  const type = row.dataset.type;
+
+  if (e.target.matches('.swatch')) {
+    equipSelectedColor[type] = e.target.dataset.color;
+    renderEquipmentPanel();
+    return;
+  }
+  if (e.target.dataset.action === 'addEquip') addEquipment(type);
+});
+
+equipmentPanel.addEventListener('dragstart', (e) => {
+  if (!e.target.classList.contains('equip-handle')) return;
+  const type = e.target.closest('.equip-row').dataset.type;
+  e.dataTransfer.setData('text/plain', JSON.stringify({ kind: 'equipment', type }));
+  e.dataTransfer.effectAllowed = 'copy';
+});
+
+equipmentPanel.addEventListener('touchstart', (e) => {
+  const handle = e.target.closest('.equip-handle');
+  if (!handle) return;
+  e.preventDefault();
+  const row = handle.closest('.equip-row');
+  const type = row.dataset.type;
+  const label = EQUIP_TYPES.find(t => t.type === type).label;
+  startTouchDrag({ kind: 'equipment', type }, label, e.touches[0]);
+}, { passive: false });
+
+function updateEquipControlsVisibility() {
+  const item = selectedEquipId && state.equipment.find(e => e.id === selectedEquipId);
+  if (!item) {
+    equipControls.style.display = 'none';
+    return;
+  }
+  equipControls.style.display = 'flex';
+  const label = EQUIP_TYPES.find(t => t.type === item.type).label.replace(/^\S+\s/, '');
+  equipControlsTitle.textContent = `선택된 ${label} — 크기${item.type === 'goal' ? ' / 방향' : ''}`;
+  equipRotateBtn.style.display = item.type === 'goal' ? 'inline-block' : 'none';
+}
+
+document.getElementById('equipSmaller').addEventListener('click', () => {
+  const item = state.equipment.find(e => e.id === selectedEquipId);
+  if (!item) return;
+  item.scale = Math.max(0.4, (item.scale || 1) * 0.85);
+  render();
+});
+document.getElementById('equipBigger').addEventListener('click', () => {
+  const item = state.equipment.find(e => e.id === selectedEquipId);
+  if (!item) return;
+  item.scale = Math.min(3, (item.scale || 1) * 1.18);
+  render();
+});
+equipRotateBtn.addEventListener('click', () => {
+  const item = state.equipment.find(e => e.id === selectedEquipId);
+  if (!item) return;
+  item.rot = ((item.rot || 0) + Math.PI / 4) % (Math.PI * 2);
+  render();
+});
+document.getElementById('equipDeselect').addEventListener('click', () => {
+  selectedEquipId = null;
+  updateEquipControlsVisibility();
+  render();
+});
+
+// ---- 선 색상 패널 ----
+const lineColorPanel = document.getElementById('lineColorPanel');
+const lineTypeSelect = document.getElementById('lineType');
+
+function renderLineColorPanel() {
+  lineColorPanel.innerHTML = LINE_PALETTE.map(c =>
+    `<button class="swatch${c === selectedLineColor ? ' selected' : ''}" style="background:${c}" data-color="${c}"></button>`
+  ).join('');
+}
+
+lineColorPanel.addEventListener('click', (e) => {
+  if (e.target.matches('.swatch')) {
+    selectedLineColor = e.target.dataset.color;
+    renderLineColorPanel();
+  }
+});
+
+// ---- 격자 표시 ----
+const gridToggleBtn = document.getElementById('gridToggleBtn');
+gridToggleBtn.addEventListener('click', () => {
+  state.showGrid = !state.showGrid;
+  gridToggleBtn.classList.toggle('active', state.showGrid);
+  render();
+});
+
+// ---- 구역 표시 ----
+const lengthZoneSelect = document.getElementById('lengthZoneSelect');
+const widthZoneSelect = document.getElementById('widthZoneSelect');
+
+function syncZoneSelects() {
+  lengthZoneSelect.value = String(state.zones.lengthZones);
+  widthZoneSelect.value = String(state.zones.widthZones);
+  gridToggleBtn.classList.toggle('active', state.showGrid);
+}
+
+lengthZoneSelect.addEventListener('change', (e) => {
+  state.zones.lengthZones = parseInt(e.target.value, 10);
+  render();
+});
+widthZoneSelect.addEventListener('change', (e) => {
+  state.zones.widthZones = parseInt(e.target.value, 10);
+  render();
+});
+
+// ---- 텍스트(설명) 패널 ----
+const textInput = document.getElementById('textInput');
+const textList = document.getElementById('textList');
+
+function renderTextList() {
+  if (state.texts.length === 0) {
+    textList.innerHTML = '<p class="empty-msg">추가된 텍스트가 없습니다.</p>';
+    return;
+  }
+  textList.innerHTML = state.texts.map(t => `<div class="text-item" data-id="${t.id}">
+    <input type="text" value="${escapeHtml(t.text)}" data-role="editText" maxlength="20" />
+    <button data-action="delText" class="small-btn">삭제</button>
+  </div>`).join('');
+}
+
+document.getElementById('addTextBtn').addEventListener('click', () => {
+  const val = textInput.value.trim();
+  if (!val) return;
+  const pos = cascadePos();
+  state.texts.push({ id: nextId(), text: val, x: pos.x, y: pos.y });
+  textInput.value = '';
+  renderTextList();
+  render();
+});
+
+textInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('addTextBtn').click();
+});
+
+textList.addEventListener('input', (e) => {
+  if (!e.target.matches('[data-role="editText"]')) return;
+  const id = e.target.closest('.text-item').dataset.id;
+  const t = state.texts.find(x => x.id === id);
+  if (t) { t.text = e.target.value; render(); }
+});
+
+textList.addEventListener('click', (e) => {
+  if (e.target.dataset.action !== 'delText') return;
+  const id = e.target.closest('.text-item').dataset.id;
+  state.texts = state.texts.filter(x => x.id !== id);
+  renderTextList();
+  render();
+});
+
+// ---- 하단 도구 ----
+const modeBtn = document.getElementById('modeBtn');
+const hint = document.getElementById('hint');
+
+modeBtn.addEventListener('click', () => {
+  mode = mode === 'move' ? 'draw' : 'move';
+  modeBtn.textContent = mode === 'move' ? '이동 모드' : '그리기 모드';
+  modeBtn.className = mode === 'move' ? 'mode-move' : 'mode-draw';
+  hint.textContent = mode === 'move'
+    ? '이동 모드: 드래그해서 옮기세요. 더블클릭하면 삭제됩니다.'
+    : '그리기 모드: 드래그해서 선을 그리세요. 이동 모드에서 선을 더블클릭하면 삭제됩니다.';
+});
+
+document.getElementById('undoBtn').addEventListener('click', undo);
+
+document.getElementById('clearArrowsBtn').addEventListener('click', () => {
+  if (state.arrows.length === 0) return;
+  pushHistory();
+  state.arrows = [];
+  render();
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (!confirm('선수, 용품, 그림, 텍스트를 모두 초기 상태로 되돌릴까요?')) return;
+  initState();
+  history = [];
+  selectedEquipId = null;
+  renderTeamsPanel();
+  syncZoneSelects();
+  renderTextList();
+  updateEquipControlsVisibility();
+  render();
+});
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `soccer-tactics-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// ---- 저장 (여러 개 이름 붙여 저장) ----
+const saveNameInput = document.getElementById('saveNameInput');
+const savesList = document.getElementById('savesList');
+const SAVES_KEY = 'soccerBoardSaves';
+
+function loadSavesList() {
+  try { return JSON.parse(localStorage.getItem(SAVES_KEY) || '[]'); } catch (e) { return []; }
+}
+function persistSavesList(list) {
+  try { localStorage.setItem(SAVES_KEY, JSON.stringify(list)); } catch (e) { /* ignore */ }
+}
+
+function renderSavesPanel() {
+  const list = loadSavesList();
+  if (list.length === 0) {
+    savesList.innerHTML = '<p class="empty-msg">저장된 작전이 없습니다.</p>';
+    return;
+  }
+  savesList.innerHTML = list.map(s => `<div class="save-item" data-id="${s.id}">
+    <div>
+      <div class="save-name">${escapeHtml(s.name)}</div>
+      <div class="save-date">${new Date(s.savedAt).toLocaleString('ko-KR')}</div>
+    </div>
+    <div class="save-actions">
+      <button data-action="loadSave" class="small-btn">불러오기</button>
+      <button data-action="delSave" class="small-btn">삭제</button>
+    </div>
+  </div>`).join('');
+}
+
+document.getElementById('saveBoardBtn').addEventListener('click', () => {
+  const name = saveNameInput.value.trim() || ('작전 ' + new Date().toLocaleString('ko-KR'));
+  const list = loadSavesList();
+  list.unshift({ id: nextId(), name, savedAt: Date.now(), data: state });
+  persistSavesList(list);
+  saveNameInput.value = '';
+  renderSavesPanel();
+});
+
+savesList.addEventListener('click', (e) => {
+  const row = e.target.closest('.save-item');
+  if (!row) return;
+  const id = row.dataset.id;
+  const list = loadSavesList();
+  const item = list.find(s => s.id === id);
+  if (!item) return;
+
+  if (e.target.dataset.action === 'loadSave') {
+    state = item.data;
+    ensureStateDefaults();
+    idCounter = Date.now();
+    cascadeCounter = 0;
+    history = [];
+    selectedEquipId = null;
+    renderTeamsPanel();
+    syncZoneSelects();
+    renderTextList();
+    updateEquipControlsVisibility();
+    render();
+  } else if (e.target.dataset.action === 'delSave') {
+    persistSavesList(list.filter(s => s.id !== id));
+    renderSavesPanel();
+  }
+});
+
+// ---- 초기화 ----
+initState();
+renderTeamsPanel();
+renderEquipmentPanel();
+renderLineColorPanel();
+syncZoneSelects();
+renderTextList();
+renderSavesPanel();
+render();
