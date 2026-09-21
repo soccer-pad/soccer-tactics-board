@@ -26,6 +26,7 @@
         <button class="tab-btn" data-tab="line">➰ 방향선</button>
         <button class="tab-btn" data-tab="text">📝 설명</button>
         <button class="tab-btn" data-tab="save">💾 저장</button>
+        <button class="tab-btn" data-tab="option">⚙️ 옵션</button>
       </div>
 
       <div class="tab-panels">
@@ -70,30 +71,8 @@
             <div id="lineColorPanel" class="swatch-row"></div>
           </div>
           <div class="row-actions wrap">
-            <button id="modeBtn" class="mode-move">이동 모드</button>
             <button id="undoBtn" class="small-btn">되돌리기</button>
             <button id="clearArrowsBtn" class="small-btn">선 지우기</button>
-            <button id="gridToggleBtn" class="small-btn">▦ 격자 표시</button>
-          </div>
-
-          <div class="panel-head sub"><span>구역 표시</span></div>
-          <div class="group">
-            <label>가로 구역 (공격 - 미들 - 수비)</label>
-            <select id="lengthZoneSelect">
-              <option value="0">없음</option>
-              <option value="3">3등분</option>
-              <option value="4">4등분</option>
-              <option value="5">5등분</option>
-            </select>
-          </div>
-          <div class="group">
-            <label>세로 구역 (왼쪽 - 중앙 - 오른쪽)</label>
-            <select id="widthZoneSelect">
-              <option value="0">없음</option>
-              <option value="3">3등분</option>
-              <option value="4">4등분</option>
-              <option value="5">5등분</option>
-            </select>
           </div>
         </section>
 
@@ -117,8 +96,41 @@
           <div id="savesList" class="save-list"></div>
           <div class="panel-head sub"><span>기타</span></div>
           <div class="row-actions wrap">
-            <button id="resetBtn" class="small-btn">전체 초기화</button>
             <button id="exportBtn" class="small-btn">이미지로 저장</button>
+          </div>
+        </section>
+
+        <!-- 옵션 -->
+        <section class="tab-panel" data-panel="option">
+          <div class="panel-head"><span>모드</span></div>
+          <div class="row-actions wrap">
+            <button id="modeBtn" class="mode-move">이동 모드</button>
+            <button id="gridToggleBtn" class="small-btn">▦ 격자 표시</button>
+          </div>
+
+          <div class="panel-head sub"><span>구역 표시</span></div>
+          <div class="group">
+            <label>가로 구역 (공격 - 미들 - 수비)</label>
+            <select id="lengthZoneSelect">
+              <option value="0">없음</option>
+              <option value="3">3등분</option>
+              <option value="4">4등분</option>
+              <option value="5">5등분</option>
+            </select>
+          </div>
+          <div class="group">
+            <label>세로 구역 (왼쪽 - 중앙 - 오른쪽)</label>
+            <select id="widthZoneSelect">
+              <option value="0">없음</option>
+              <option value="3">3등분</option>
+              <option value="4">4등분</option>
+              <option value="5">5등분</option>
+            </select>
+          </div>
+
+          <div class="panel-head sub"><span>기타</span></div>
+          <div class="row-actions wrap">
+            <button id="resetBtn" class="small-btn">전체 초기화</button>
           </div>
         </section>
       </div>
