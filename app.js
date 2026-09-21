@@ -412,9 +412,14 @@ function drawGrid() {
   ctx.restore();
 }
 
+// lengthZones = 공격-미들-수비 (골대 방향 축), widthZones = 왼쪽-중앙-오른쪽 (터치라인 방향 축)
+// 정규 축구장(가로)에서는 lengthZones가 x축, widthZones가 y축을 나누지만
+// 하프 코트(세로)에서는 실제 골대 방향이 y축이 되므로 반대로 나눠야 한다.
 function drawZones() {
   const { lengthZones, widthZones } = state.zones;
   if (!lengthZones && !widthZones) return;
+
+  const isHalf = state.pitchMode === 'half';
 
   ctx.save();
   ctx.strokeStyle = 'rgba(255,255,80,0.55)';
@@ -423,37 +428,73 @@ function drawZones() {
   ctx.font = 'bold 12px sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
 
+  // ---- 공격-미들-수비 ----
   if (lengthZones >= 3) {
     const labels = lengthZones === 3 ? ['수비', '미들', '공격'] : Array.from({ length: lengthZones }, (_, i) => `구역${i + 1}`);
-    for (let i = 1; i < lengthZones; i++) {
-      const lx = field.left + (fieldW * i) / lengthZones;
-      ctx.beginPath();
-      ctx.moveTo(lx, field.top);
-      ctx.lineTo(lx, field.bottom);
-      ctx.stroke();
-    }
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    for (let i = 0; i < lengthZones; i++) {
-      const cx = field.left + (fieldW * (i + 0.5)) / lengthZones;
-      ctx.fillText(labels[i], cx, field.top + 6);
+    if (!isHalf) {
+      for (let i = 1; i < lengthZones; i++) {
+        const lx = field.left + (fieldW * i) / lengthZones;
+        ctx.beginPath();
+        ctx.moveTo(lx, field.top);
+        ctx.lineTo(lx, field.bottom);
+        ctx.stroke();
+      }
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (let i = 0; i < lengthZones; i++) {
+        const cx = field.left + (fieldW * (i + 0.5)) / lengthZones;
+        ctx.fillText(labels[i], cx, field.top + 6);
+      }
+    } else {
+      const goalIsBottom = state.halfGoalPos !== 'top';
+      for (let i = 1; i < lengthZones; i++) {
+        const ly = field.top + (fieldH * i) / lengthZones;
+        ctx.beginPath();
+        ctx.moveTo(field.left, ly);
+        ctx.lineTo(field.right, ly);
+        ctx.stroke();
+      }
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      for (let i = 0; i < lengthZones; i++) {
+        const labelIdx = goalIsBottom ? (lengthZones - 1 - i) : i;
+        const cy = field.top + (fieldH * (i + 0.5)) / lengthZones;
+        ctx.fillText(labels[labelIdx], field.left + 6, cy);
+      }
     }
   }
 
+  // ---- 왼쪽-중앙-오른쪽 ----
   if (widthZones >= 3) {
     const labels = widthZones === 3 ? ['왼쪽', '중앙', '오른쪽'] : Array.from({ length: widthZones }, (_, i) => `구역${i + 1}`);
-    for (let i = 1; i < widthZones; i++) {
-      const ly = field.top + (fieldH * i) / widthZones;
-      ctx.beginPath();
-      ctx.moveTo(field.left, ly);
-      ctx.lineTo(field.right, ly);
-      ctx.stroke();
-    }
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    for (let i = 0; i < widthZones; i++) {
-      const cy = field.top + (fieldH * (i + 0.5)) / widthZones;
-      ctx.fillText(labels[i], field.left + 6, cy);
+    if (!isHalf) {
+      for (let i = 1; i < widthZones; i++) {
+        const ly = field.top + (fieldH * i) / widthZones;
+        ctx.beginPath();
+        ctx.moveTo(field.left, ly);
+        ctx.lineTo(field.right, ly);
+        ctx.stroke();
+      }
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      for (let i = 0; i < widthZones; i++) {
+        const cy = field.top + (fieldH * (i + 0.5)) / widthZones;
+        ctx.fillText(labels[i], field.left + 6, cy);
+      }
+    } else {
+      for (let i = 1; i < widthZones; i++) {
+        const lx = field.left + (fieldW * i) / widthZones;
+        ctx.beginPath();
+        ctx.moveTo(lx, field.top);
+        ctx.lineTo(lx, field.bottom);
+        ctx.stroke();
+      }
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (let i = 0; i < widthZones; i++) {
+        const cx = field.left + (fieldW * (i + 0.5)) / widthZones;
+        ctx.fillText(labels[i], cx, field.top + 6);
+      }
     }
   }
 
