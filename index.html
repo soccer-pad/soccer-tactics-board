@@ -29,7 +29,7 @@
       <div class="tab-bar">
         <button class="tab-btn active" data-tab="team">👥 팀</button>
         <button class="tab-btn" data-tab="equip">🧰 용품</button>
-        <button class="tab-btn" data-tab="line">➰ 방향선</button>
+        <button class="tab-btn" data-tab="line">➰ 선</button>
         <button class="tab-btn" data-tab="text">📝 설명</button>
         <button class="tab-btn" data-tab="option">⚙️ 옵션</button>
         <button class="tab-btn" data-tab="save">💾 저장</button>
@@ -61,9 +61,19 @@
           <div id="equipmentPanel" class="equipment-panel"></div>
         </section>
 
-        <!-- 방향선 -->
+        <!-- 선 -->
         <section class="tab-panel" data-panel="line">
           <div class="panel-head"><span>선 그리기</span></div>
+          <div class="row-actions wrap">
+            <button id="modeBtn2" class="mode-toggle-btn mode-move">이동 모드</button>
+          </div>
+          <div class="group">
+            <label>선 모양</label>
+            <div class="row-actions wrap" id="lineArrowPanel">
+              <button class="small-btn line-arrow-btn active" data-value="arrow">➜ 방향선 (화살표)</button>
+              <button class="small-btn line-arrow-btn" data-value="plain">─ 일반 선 (화살표 없음)</button>
+            </div>
+          </div>
           <div class="group">
             <label>선 종류</label>
             <div class="row-actions wrap" id="lineTypePanel">
@@ -97,7 +107,7 @@
         <section class="tab-panel" data-panel="option">
           <div class="panel-head"><span>모드</span></div>
           <div class="row-actions wrap">
-            <button id="modeBtn" class="mode-move">이동 모드</button>
+            <button id="modeBtn" class="mode-toggle-btn mode-move">이동 모드</button>
             <button id="gridToggleBtn" class="small-btn">▦ 격자 표시</button>
           </div>
 
@@ -158,6 +168,23 @@
         </section>
       </div>
     </aside>
+  </div>
+
+  <div id="cropModal" class="crop-modal" style="display:none">
+    <div class="crop-modal-inner">
+      <div class="crop-title">팀 마크 사진 위치/크기 조절</div>
+      <div class="crop-stage-wrap">
+        <canvas id="cropCanvas" width="260" height="260"></canvas>
+      </div>
+      <div class="crop-controls">
+        <label>확대</label>
+        <input type="range" id="cropZoomSlider" min="100" max="300" value="100" />
+      </div>
+      <div class="row-actions wrap crop-actions">
+        <button id="cropCancelBtn" class="small-btn">취소</button>
+        <button id="cropConfirmBtn" class="small-btn accent">확인</button>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>

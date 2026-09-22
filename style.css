@@ -186,12 +186,12 @@ input[type="text"] {
   flex-wrap: wrap;
 }
 
-#modeBtn.mode-move {
+.mode-toggle-btn.mode-move {
   background: #2e7d32;
   border-color: #2e7d32;
 }
 
-#modeBtn.mode-draw {
+.mode-toggle-btn.mode-draw {
   background: #d84315;
   border-color: #d84315;
 }
@@ -199,6 +199,12 @@ input[type="text"] {
 .line-type-btn.active {
   background: #2e7d32;
   border-color: #2e7d32;
+  color: #fff;
+}
+
+.line-arrow-btn.active {
+  background: #00838f;
+  border-color: #00838f;
   color: #fff;
 }
 
@@ -534,6 +540,66 @@ input[type="text"] {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+}
+
+/* ---- 팀 마크 사진 자르기 ---- */
+.crop-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.crop-modal-inner {
+  background: #262b33;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  max-width: 92vw;
+}
+
+.crop-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #eee;
+}
+
+.crop-stage-wrap {
+  border-radius: 8px;
+  overflow: hidden;
+  touch-action: none;
+  max-width: 100%;
+}
+
+#cropCanvas {
+  display: block;
+  cursor: grab;
+  background: #111;
+  touch-action: none;
+  max-width: 100%;
+}
+
+.crop-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.crop-controls input[type="range"] {
+  flex: 1;
+}
+
+.crop-actions {
+  justify-content: flex-end;
+  width: 100%;
 }
 
 @media (max-width: 900px) {

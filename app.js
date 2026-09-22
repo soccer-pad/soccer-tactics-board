@@ -510,6 +510,8 @@ function drawLine(arrow) {
   ctx.stroke();
   ctx.setLineDash([]);
 
+  if (arrow.hasArrow === false) return;
+
   const p1 = pts[pts.length - 2];
   const p2 = pts[pts.length - 1];
   const headLen = 12;
@@ -979,10 +981,11 @@ function onDown(evt) {
   } else {
     const type = selectedLineType;
     const isFreehand = type === 'freehand' || type === 'freehand-dashed';
+    const hasArrow = selectedLineArrow === 'arrow';
     const p0 = maybeSnap(x, y);
     currentDraw = isFreehand
-      ? { type, color: selectedLineColor, points: [{ x, y }] }
-      : { type, color: selectedLineColor, points: [p0, p0] };
+      ? { type, color: selectedLineColor, hasArrow, points: [{ x, y }] }
+      : { type, color: selectedLineColor, hasArrow, points: [p0, p0] };
   }
 }
 
@@ -1313,26 +1316,126 @@ function handleCrestFile(teamId, file) {
   const reader = new FileReader();
   reader.onload = () => {
     const img = new Image();
-    img.onload = () => {
-      const size = 128;
-      const off = document.createElement('canvas');
-      off.width = size;
-      off.height = size;
-      const octx = off.getContext('2d');
-      const scale = Math.max(size / img.width, size / img.height);
-      const dw = img.width * scale, dh = img.height * scale;
-      octx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
-      const team = findTeam(teamId);
-      if (!team) return;
-      team.crest = off.toDataURL('image/png');
-      delete teamCrestImages[teamId];
-      renderTeamsPanel();
-      render();
-    };
+    img.onload = () => openCropper(teamId, img);
     img.src = reader.result;
   };
   reader.readAsDataURL(file);
 }
+
+// ---- 팀 마크 사진 자르기 (카카오톡 프로필처럼 드래그/확대) ----
+let cropperState = null; // { teamId, img, baseScale, zoom, panX, panY }
+let cropDrag = null;
+const cropModal = document.getElementById('cropModal');
+const cropCanvas = document.getElementById('cropCanvas');
+const cropCtx = cropCanvas.getContext('2d');
+const cropZoomSlider = document.getElementById('cropZoomSlider');
+
+function openCropper(teamId, img) {
+  const CS = cropCanvas.width;
+  const baseScale = Math.max(CS / img.width, CS / img.height);
+  cropperState = { teamId, img, baseScale, zoom: 1, panX: 0, panY: 0 };
+  cropZoomSlider.value = 100;
+  cropModal.style.display = 'flex';
+  drawCropPreview();
+}
+
+function closeCropper() {
+  cropModal.style.display = 'none';
+  cropperState = null;
+  cropDrag = null;
+}
+
+function drawCropPreview() {
+  if (!cropperState) return;
+  const CS = cropCanvas.width;
+  const { img, baseScale, zoom, panX, panY } = cropperState;
+  const scale = baseScale * zoom;
+  const dw = img.width * scale, dh = img.height * scale;
+
+  cropCtx.fillStyle = '#111';
+  cropCtx.fillRect(0, 0, CS, CS);
+  cropCtx.drawImage(img, CS / 2 - dw / 2 + panX, CS / 2 - dh / 2 + panY, dw, dh);
+
+  cropCtx.save();
+  cropCtx.beginPath();
+  cropCtx.rect(0, 0, CS, CS);
+  cropCtx.arc(CS / 2, CS / 2, CS / 2 - 4, 0, Math.PI * 2, true);
+  cropCtx.fillStyle = 'rgba(0,0,0,0.6)';
+  cropCtx.fill('evenodd');
+  cropCtx.restore();
+
+  cropCtx.beginPath();
+  cropCtx.arc(CS / 2, CS / 2, CS / 2 - 4, 0, Math.PI * 2);
+  cropCtx.strokeStyle = '#fff';
+  cropCtx.lineWidth = 2;
+  cropCtx.stroke();
+}
+
+function cropDragStart(evt) {
+  if (!cropperState) return;
+  evt.preventDefault();
+  const { clientX, clientY } = getClientXY(evt);
+  cropDrag = { x: clientX, y: clientY, panX: cropperState.panX, panY: cropperState.panY };
+}
+
+function cropDragMove(evt) {
+  if (!cropDrag || !cropperState) return;
+  evt.preventDefault();
+  const { clientX, clientY } = getClientXY(evt);
+  cropperState.panX = cropDrag.panX + (clientX - cropDrag.x);
+  cropperState.panY = cropDrag.panY + (clientY - cropDrag.y);
+  drawCropPreview();
+}
+
+function cropDragEnd() {
+  cropDrag = null;
+}
+
+cropCanvas.addEventListener('mousedown', cropDragStart);
+window.addEventListener('mousemove', cropDragMove);
+window.addEventListener('mouseup', cropDragEnd);
+cropCanvas.addEventListener('touchstart', cropDragStart, { passive: false });
+cropCanvas.addEventListener('touchmove', cropDragMove, { passive: false });
+window.addEventListener('touchend', cropDragEnd);
+window.addEventListener('touchcancel', cropDragEnd);
+
+cropZoomSlider.addEventListener('input', (e) => {
+  if (!cropperState) return;
+  cropperState.zoom = e.target.value / 100;
+  drawCropPreview();
+});
+
+document.getElementById('cropCancelBtn').addEventListener('click', closeCropper);
+
+document.getElementById('cropConfirmBtn').addEventListener('click', () => {
+  if (!cropperState) return;
+  const CS = cropCanvas.width;
+  const OUT = 128;
+  const ratio = OUT / CS;
+  const { img, baseScale, zoom, panX, panY, teamId } = cropperState;
+  const scale = baseScale * zoom * ratio;
+  const dw = img.width * scale, dh = img.height * scale;
+
+  const out = document.createElement('canvas');
+  out.width = OUT;
+  out.height = OUT;
+  const octx = out.getContext('2d');
+  octx.save();
+  octx.beginPath();
+  octx.arc(OUT / 2, OUT / 2, OUT / 2, 0, Math.PI * 2);
+  octx.clip();
+  octx.drawImage(img, OUT / 2 - dw / 2 + panX * ratio, OUT / 2 - dh / 2 + panY * ratio, dw, dh);
+  octx.restore();
+
+  const team = findTeam(teamId);
+  if (team) {
+    team.crest = out.toDataURL('image/png');
+    delete teamCrestImages[teamId];
+    renderTeamsPanel();
+    render();
+  }
+  closeCropper();
+});
 
 function removePlayerFromTeam(id) {
   const team = findTeam(id);
@@ -1552,7 +1655,16 @@ document.getElementById('equipDeselect').addEventListener('click', () => {
   render();
 });
 
-// ---- 선 종류 / 선 색상 패널 ----
+// ---- 선 모양(방향선/일반 선) / 선 종류 / 선 색상 패널 ----
+let selectedLineArrow = 'arrow';
+const lineArrowPanel = document.getElementById('lineArrowPanel');
+
+lineArrowPanel.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('line-arrow-btn')) return;
+  selectedLineArrow = e.target.dataset.value;
+  lineArrowPanel.querySelectorAll('.line-arrow-btn').forEach(b => b.classList.toggle('active', b === e.target));
+});
+
 let selectedLineType = 'solid';
 const lineTypePanel = document.getElementById('lineTypePanel');
 const lineColorPanel = document.getElementById('lineColorPanel');
@@ -1687,16 +1799,26 @@ textList.addEventListener('click', (e) => {
 
 // ---- 하단 도구 ----
 const modeBtn = document.getElementById('modeBtn');
+const modeBtn2 = document.getElementById('modeBtn2');
+const modeButtons = [modeBtn, modeBtn2];
 const hint = document.getElementById('hint');
 
-modeBtn.addEventListener('click', () => {
-  mode = mode === 'move' ? 'draw' : 'move';
-  modeBtn.textContent = mode === 'move' ? '이동 모드' : '그리기 모드';
-  modeBtn.className = mode === 'move' ? 'mode-move' : 'mode-draw';
+function refreshModeButtons() {
+  modeButtons.forEach(b => {
+    b.textContent = mode === 'move' ? '이동 모드' : '그리기 모드';
+    b.className = 'mode-toggle-btn ' + (mode === 'move' ? 'mode-move' : 'mode-draw');
+  });
   hint.textContent = mode === 'move'
-    ? '이동 모드: 드래그해서 옮기세요. 더블클릭하면 삭제됩니다.'
+    ? '이동 모드: 드래그해서 옮기세요. 더블클릭(또는 길게 누르기)하거나 삭제 영역으로 끌면 삭제됩니다. 확대 중엔 손가락 두 개로 오므리거나 벌려서 확대/이동하세요.'
     : '그리기 모드: 드래그해서 선을 그리세요. 이동 모드에서 선을 더블클릭하면 삭제됩니다.';
-});
+}
+
+function toggleMode() {
+  mode = mode === 'move' ? 'draw' : 'move';
+  refreshModeButtons();
+}
+
+modeButtons.forEach(b => b.addEventListener('click', toggleMode));
 
 document.getElementById('undoBtn').addEventListener('click', undo);
 
