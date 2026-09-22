@@ -133,7 +133,7 @@ function formationToPlayers(key, side) {
       x = side === 'L' ? field.left + relX * (fieldW / 2) : field.right - relX * (fieldW / 2);
       y = field.top + relY * fieldH;
     }
-    return { id: nextId(), num: i + 1, x, y };
+    return { id: nextId(), num: String(i + 1), x, y };
   });
 }
 
@@ -249,10 +249,6 @@ function findArrowIndexAt(x, y) {
     }
   }
   return -1;
-}
-
-function renumberTeam(team) {
-  team.players.forEach((p, idx) => { p.num = idx + 1; });
 }
 
 function findTeam(id) {
@@ -508,7 +504,7 @@ function drawLine(arrow) {
   ctx.strokeStyle = arrow.color;
   ctx.fillStyle = arrow.color;
   ctx.lineWidth = 3;
-  ctx.setLineDash(arrow.type === 'dashed' ? [10, 8] : []);
+  ctx.setLineDash(arrow.type === 'dashed' || arrow.type === 'freehand-dashed' ? [10, 8] : []);
   ctx.beginPath();
   pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
   ctx.stroke();
@@ -526,24 +522,71 @@ function drawLine(arrow) {
   ctx.fill();
 }
 
-function drawPlayer(p, color) {
+const VEST_COLORS = {
+  yellow: 'rgba(255,235,59,0.55)',
+  red: 'rgba(229,57,53,0.55)',
+  orange: 'rgba(251,140,0,0.55)',
+  blue: 'rgba(30,136,229,0.55)',
+};
+
+function drawPlayer(p, color, crestImg) {
   drawShadow(p.x, p.y + PLAYER_R * 0.75, PLAYER_R * 0.9, PLAYER_R * 0.35);
-  const grad = ctx.createRadialGradient(p.x - 4, p.y - 4, 2, p.x, p.y, PLAYER_R);
-  grad.addColorStop(0, shadeColor(color, 0.35));
-  grad.addColorStop(1, shadeColor(color, -0.15));
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
-  ctx.fillStyle = grad;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#fff';
-  ctx.stroke();
+
+  if (crestImg) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(crestImg, p.x - PLAYER_R, p.y - PLAYER_R, PLAYER_R * 2, PLAYER_R * 2);
+    ctx.restore();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    const grad = ctx.createRadialGradient(p.x - 4, p.y - 4, 2, p.x, p.y, PLAYER_R);
+    grad.addColorStop(0, shadeColor(color, 0.35));
+    grad.addColorStop(1, shadeColor(color, -0.15));
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+  }
+
+  if (p.vest && VEST_COLORS[p.vest]) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, PLAYER_R * 0.72, 0, Math.PI * 2);
+    ctx.fillStyle = VEST_COLORS[p.vest];
+    ctx.fill();
+  }
 
   ctx.fillStyle = '#fff';
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = 2.5;
   ctx.font = 'bold 11px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  ctx.strokeText(p.num, p.x, p.y);
   ctx.fillText(p.num, p.x, p.y);
+}
+
+// ---- 팀 마크 이미지 ----
+const teamCrestImages = {};
+function getTeamCrestImage(team) {
+  if (!team.crest) return null;
+  const cached = teamCrestImages[team.id];
+  if (cached && cached.src === team.crest) return cached.loaded ? cached.img : null;
+  const img = new Image();
+  const entry = { img, src: team.crest, loaded: false };
+  teamCrestImages[team.id] = entry;
+  img.onload = () => { entry.loaded = true; render(); };
+  img.src = team.crest;
+  return null;
 }
 
 function drawRegularPolygon(cx, cy, radius, sides, rotation) {
@@ -805,7 +848,10 @@ function render() {
     const sel = state.equipment.find(e => e.id === selectedEquipId);
     if (sel) drawSelectionOutline(sel);
   }
-  state.teams.forEach(team => team.players.forEach(p => drawPlayer(p, team.color)));
+  state.teams.forEach(team => {
+    const crestImg = getTeamCrestImage(team);
+    team.players.forEach(p => drawPlayer(p, team.color, crestImg));
+  });
   state.texts.forEach(t => drawText(t));
 }
 
@@ -844,7 +890,6 @@ function deleteTarget(t) {
   if (t.kind === 'player') {
     const team = state.teams[t.teamIndex];
     team.players = team.players.filter(p => p.id !== t.ref.id);
-    renumberTeam(team);
     renderTeamsPanel();
   } else if (t.kind === 'equipment') {
     if (selectedEquipId === t.ref.id) { selectedEquipId = null; updateEquipControlsVisibility(); }
@@ -933,8 +978,9 @@ function onDown(evt) {
     render();
   } else {
     const type = selectedLineType;
+    const isFreehand = type === 'freehand' || type === 'freehand-dashed';
     const p0 = maybeSnap(x, y);
-    currentDraw = type === 'freehand'
+    currentDraw = isFreehand
       ? { type, color: selectedLineColor, points: [{ x, y }] }
       : { type, color: selectedLineColor, points: [p0, p0] };
   }
@@ -961,7 +1007,7 @@ function onMove(evt) {
     dragTarget.ref.y = snapped.y;
     render();
   } else if (mode === 'draw' && currentDraw) {
-    if (currentDraw.type === 'freehand') {
+    if (currentDraw.type === 'freehand' || currentDraw.type === 'freehand-dashed') {
       const last = currentDraw.points[currentDraw.points.length - 1];
       if (Math.hypot(x - last.x, y - last.y) > 4) currentDraw.points.push({ x, y });
     } else {
@@ -986,7 +1032,7 @@ function onUp(evt) {
 
   if (mode === 'draw' && currentDraw) {
     let valid;
-    if (currentDraw.type === 'freehand') {
+    if (currentDraw.type === 'freehand' || currentDraw.type === 'freehand-dashed') {
       valid = currentDraw.points.length >= 2;
     } else {
       const [p1, p2] = currentDraw.points;
@@ -1002,13 +1048,87 @@ function onUp(evt) {
   render();
 }
 
+// ---- 확대/축소 (버튼 + 핀치 줌) ----
+const boardWrap = document.getElementById('boardWrap');
+const zoomLabel = document.getElementById('zoomLabel');
+const ZOOM_MIN = 1, ZOOM_MAX = 3;
+let zoomLevel = 1;
+let pinchState = null;
+
+function applyZoomStyle() {
+  if (zoomLevel <= 1) {
+    canvas.style.width = '';
+    canvas.style.height = '';
+    canvas.style.maxWidth = '100%';
+  } else {
+    canvas.style.maxWidth = 'none';
+    canvas.style.width = (W * zoomLevel) + 'px';
+    canvas.style.height = (H * zoomLevel) + 'px';
+  }
+  zoomLabel.textContent = Math.round(zoomLevel * 100) + '%';
+}
+
+function setZoom(z) {
+  zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+  applyZoomStyle();
+}
+
+document.getElementById('zoomInBtn').addEventListener('click', () => setZoom(zoomLevel + 0.25));
+document.getElementById('zoomOutBtn').addEventListener('click', () => setZoom(zoomLevel - 0.25));
+document.getElementById('zoomResetBtn').addEventListener('click', () => {
+  setZoom(1);
+  boardWrap.scrollLeft = 0;
+  boardWrap.scrollTop = 0;
+});
+
+function touchDist(t1, t2) { return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY); }
+function touchMid(t1, t2) { return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 }; }
+
+function handleTouchStart(evt) {
+  if (evt.touches.length === 2) {
+    evt.preventDefault();
+    isPointerDown = false;
+    dragTarget = null;
+    currentDraw = null;
+    cancelLongPress();
+    trashZone.classList.remove('active', 'hover');
+    pinchState = {
+      startDist: touchDist(evt.touches[0], evt.touches[1]),
+      startZoom: zoomLevel,
+      startMid: touchMid(evt.touches[0], evt.touches[1]),
+      startScrollLeft: boardWrap.scrollLeft,
+      startScrollTop: boardWrap.scrollTop,
+    };
+    return;
+  }
+  onDown(evt);
+}
+
+function handleTouchMove(evt) {
+  if (evt.touches.length === 2 && pinchState) {
+    evt.preventDefault();
+    const dist = touchDist(evt.touches[0], evt.touches[1]);
+    setZoom(pinchState.startZoom * (dist / pinchState.startDist));
+    const mid = touchMid(evt.touches[0], evt.touches[1]);
+    boardWrap.scrollLeft = pinchState.startScrollLeft - (mid.x - pinchState.startMid.x);
+    boardWrap.scrollTop = pinchState.startScrollTop - (mid.y - pinchState.startMid.y);
+    return;
+  }
+  onMove(evt);
+}
+
+function handleTouchEnd(evt) {
+  if (evt.touches.length < 2) pinchState = null;
+  onUp(evt);
+}
+
 canvas.addEventListener('mousedown', onDown);
 canvas.addEventListener('mousemove', onMove);
 window.addEventListener('mouseup', onUp);
-canvas.addEventListener('touchstart', onDown, { passive: false });
-canvas.addEventListener('touchmove', onMove, { passive: false });
-window.addEventListener('touchend', onUp);
-window.addEventListener('touchcancel', onUp);
+canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+window.addEventListener('touchend', handleTouchEnd);
+window.addEventListener('touchcancel', handleTouchEnd);
 
 canvas.addEventListener('dblclick', (evt) => {
   if (mode !== 'move') return;
@@ -1026,7 +1146,7 @@ function placeItemAt(data, x, y) {
     }
     const team = findTeam(data.teamId);
     if (!team) return;
-    team.players.push({ id: nextId(), num: team.players.length + 1, x: snapped.x, y: snapped.y });
+    team.players.push({ id: nextId(), num: String(team.players.length + 1), x: snapped.x, y: snapped.y });
     renderTeamsPanel();
   } else if (data.kind === 'equipment') {
     const item = { id: nextId(), type: data.type, color: equipSelectedColor[data.type], x: snapped.x, y: snapped.y };
@@ -1114,6 +1234,13 @@ function undo() {
 const teamsPanel = document.getElementById('teamsPanel');
 const totalCountEl = document.getElementById('totalCount');
 
+const VEST_UI_COLORS = [
+  { key: 'yellow', css: '#fdd835' },
+  { key: 'red', css: '#e53935' },
+  { key: 'orange', css: '#fb8c00' },
+  { key: 'blue', css: '#1e88e5' },
+];
+
 function renderTeamsPanel() {
   if (state.teams.length === 0) {
     teamsPanel.innerHTML = '<p class="empty-msg">아직 팀이 없습니다. 위의 "+ 팀 추가"를 눌러 팀을 만들어보세요.</p>';
@@ -1125,6 +1252,16 @@ function renderTeamsPanel() {
       `<button class="swatch${c === team.color ? ' selected' : ''}" style="background:${c}" data-color="${c}"></button>`
     ).join('');
     const formOptions = FORMATION_KEYS.map(k => `<option value="${k}">${FORMATION_LABELS[k]}</option>`).join('');
+    const playerChips = team.players.map(p => {
+      const vestSwatches = `<button class="vest-swatch none-swatch${!p.vest ? ' selected' : ''}" data-vest="" title="조끼 없음">–</button>` +
+        VEST_UI_COLORS.map(v => `<button class="vest-swatch${p.vest === v.key ? ' selected' : ''}" style="background:${v.css}" data-vest="${v.key}" title="${v.key} 조끼"></button>`).join('');
+      return `<div class="player-chip" data-player="${p.id}">
+        <input type="text" class="player-label-input" value="${escapeHtml(p.num)}" maxlength="3" />
+        <div class="vest-swatch-row">${vestSwatches}</div>
+        <button class="small-btn player-del-btn" data-action="delPlayer" title="이 선수 삭제">✕</button>
+      </div>`;
+    }).join('');
+
     return `<div class="team-row" data-team="${team.id}" style="border-left-color:${team.color}">
       <div class="team-title">
         <span>팀${i + 1}<span class="team-count"> · ${team.players.length}명</span></span>
@@ -1133,6 +1270,12 @@ function renderTeamsPanel() {
         </span>
       </div>
       <div class="swatch-row" data-role="teamColor">${swatches}</div>
+      <div class="crest-row">
+        <div class="crest-preview" style="${team.crest ? `background-image:url('${team.crest}')` : ''}"></div>
+        <button class="small-btn" data-action="uploadCrest">팀 마크 이미지</button>
+        ${team.crest ? '<button class="small-btn" data-action="removeCrest">제거</button>' : ''}
+        <input type="file" accept="image/*" class="crest-file-input" style="display:none" />
+      </div>
       <div class="row-actions">
         <div class="drag-handle player-handle" draggable="true" style="background:${team.color}">선수 드래그</div>
         <button data-action="addPlayer" class="small-btn">+ 선수</button>
@@ -1142,6 +1285,7 @@ function renderTeamsPanel() {
         <select data-role="formationSelect">${formOptions}</select>
         <button data-action="applyFormation" class="small-btn">배치</button>
       </div>
+      ${team.players.length > 0 ? `<div class="player-list">${playerChips}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -1159,9 +1303,35 @@ function addPlayerToTeam(id) {
   }
   const team = findTeam(id);
   const pos = cascadePos();
-  team.players.push({ id: nextId(), num: team.players.length + 1, x: pos.x, y: pos.y });
+  team.players.push({ id: nextId(), num: String(team.players.length + 1), x: pos.x, y: pos.y });
   renderTeamsPanel();
   render();
+}
+
+function handleCrestFile(teamId, file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const size = 128;
+      const off = document.createElement('canvas');
+      off.width = size;
+      off.height = size;
+      const octx = off.getContext('2d');
+      const scale = Math.max(size / img.width, size / img.height);
+      const dw = img.width * scale, dh = img.height * scale;
+      octx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+      const team = findTeam(teamId);
+      if (!team) return;
+      team.crest = off.toDataURL('image/png');
+      delete teamCrestImages[teamId];
+      renderTeamsPanel();
+      render();
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
 }
 
 function removePlayerFromTeam(id) {
@@ -1207,10 +1377,22 @@ teamsPanel.addEventListener('click', (e) => {
   if (!row) return;
   const id = row.dataset.team;
 
-  if (e.target.matches('.swatch')) {
+  if (e.target.matches('.swatch') && !e.target.matches('.vest-swatch')) {
     findTeam(id).color = e.target.dataset.color;
     renderTeamsPanel();
     render();
+    return;
+  }
+
+  if (e.target.matches('.vest-swatch')) {
+    const chip = e.target.closest('.player-chip');
+    const team = findTeam(id);
+    const player = team && team.players.find(p => p.id === chip.dataset.player);
+    if (player) {
+      player.vest = e.target.dataset.vest || null;
+      renderTeamsPanel();
+      render();
+    }
     return;
   }
 
@@ -1221,6 +1403,42 @@ teamsPanel.addEventListener('click', (e) => {
   else if (action === 'applyFormation') {
     const sel = row.querySelector('[data-role="formationSelect"]');
     applyFormationToTeam(id, sel.value);
+  } else if (action === 'delPlayer') {
+    const chip = e.target.closest('.player-chip');
+    const team = findTeam(id);
+    if (team) {
+      team.players = team.players.filter(p => p.id !== chip.dataset.player);
+      renderTeamsPanel();
+      render();
+    }
+  } else if (action === 'uploadCrest') {
+    row.querySelector('.crest-file-input').click();
+  } else if (action === 'removeCrest') {
+    const team = findTeam(id);
+    if (team) {
+      team.crest = null;
+      delete teamCrestImages[id];
+      renderTeamsPanel();
+      render();
+    }
+  }
+});
+
+teamsPanel.addEventListener('change', (e) => {
+  if (!e.target.classList.contains('crest-file-input')) return;
+  const row = e.target.closest('.team-row');
+  handleCrestFile(row.dataset.team, e.target.files[0]);
+});
+
+teamsPanel.addEventListener('input', (e) => {
+  if (!e.target.classList.contains('player-label-input')) return;
+  const row = e.target.closest('.team-row');
+  const chip = e.target.closest('.player-chip');
+  const team = findTeam(row.dataset.team);
+  const player = team && team.players.find(p => p.id === chip.dataset.player);
+  if (player) {
+    player.num = e.target.value;
+    render();
   }
 });
 
@@ -1388,6 +1606,9 @@ function changePitchMode(mode, goalPos) {
   setFieldGeometry();
   rescalePositions(oldW, oldH, W, H);
   halfGoalGroup.style.display = mode === 'half' ? 'flex' : 'none';
+  setZoom(1);
+  boardWrap.scrollLeft = 0;
+  boardWrap.scrollTop = 0;
   render();
 }
 
@@ -1490,6 +1711,9 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   if (!confirm('선수, 용품, 그림, 텍스트를 모두 초기 상태로 되돌릴까요?')) return;
   initState();
   setFieldGeometry();
+  setZoom(1);
+  boardWrap.scrollLeft = 0;
+  boardWrap.scrollTop = 0;
   history = [];
   selectedEquipId = null;
   renderTeamsPanel();
@@ -1557,6 +1781,9 @@ savesList.addEventListener('click', (e) => {
     state = item.data;
     ensureStateDefaults();
     setFieldGeometry();
+    setZoom(1);
+    boardWrap.scrollLeft = 0;
+    boardWrap.scrollTop = 0;
     idCounter = Date.now();
     cascadeCounter = 0;
     history = [];
@@ -1575,6 +1802,7 @@ savesList.addEventListener('click', (e) => {
 // ---- 초기화 ----
 initState();
 setFieldGeometry();
+applyZoomStyle();
 renderTeamsPanel();
 renderEquipmentPanel();
 renderLineColorPanel();

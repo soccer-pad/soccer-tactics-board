@@ -11,10 +11,16 @@
 
   <div class="app-shell">
     <div class="stage">
-      <div class="board-wrap">
+      <div class="board-wrap" id="boardWrap">
         <canvas id="board" width="940" height="644"></canvas>
       </div>
-      <p class="hint" id="hint">이동 모드: 드래그해서 옮기세요. 더블클릭(또는 길게 누르기)하거나 삭제 영역으로 끌면 삭제됩니다.</p>
+      <div class="zoom-controls">
+        <button id="zoomOutBtn" class="small-btn">− 축소</button>
+        <span id="zoomLabel" class="zoom-label">100%</span>
+        <button id="zoomInBtn" class="small-btn">+ 확대</button>
+        <button id="zoomResetBtn" class="small-btn">원본</button>
+      </div>
+      <p class="hint" id="hint">이동 모드: 드래그해서 옮기세요. 더블클릭(또는 길게 누르기)하거나 삭제 영역으로 끌면 삭제됩니다. 확대 중엔 손가락 두 개로 오므리거나 벌려서 확대/이동하세요.</p>
     </div>
 
     <div id="trashZone" class="trash-zone">🗑️ 여기로 끌어서 삭제</div>
@@ -64,6 +70,7 @@
               <button class="small-btn line-type-btn active" data-value="solid">실선</button>
               <button class="small-btn line-type-btn" data-value="dashed">점선</button>
               <button class="small-btn line-type-btn" data-value="freehand">자유곡선</button>
+              <button class="small-btn line-type-btn" data-value="freehand-dashed">자유곡선(점선)</button>
             </div>
           </div>
           <div class="group">
