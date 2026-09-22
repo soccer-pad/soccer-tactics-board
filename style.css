@@ -406,6 +406,16 @@ input[type="text"] {
   flex-shrink: 0;
 }
 
+.player-size-btn {
+  padding: 2px 6px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.player-chip {
+  flex-wrap: wrap;
+}
+
 .small-btn {
   padding: 4px 8px;
   font-size: 13px;
@@ -595,6 +605,12 @@ input[type="text"] {
 
 .crop-controls input[type="range"] {
   flex: 1;
+}
+
+input[type="range"] {
+  flex: 1;
+  accent-color: #2e7d32;
+  min-width: 0;
 }
 
 .crop-actions {

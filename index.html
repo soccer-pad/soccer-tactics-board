@@ -51,11 +51,18 @@
           <div class="panel-head"><span>훈련 용품 (드래그하거나 "+추가")</span></div>
           <div id="equipControls" class="goal-controls" style="display:none">
             <div class="equip-title" id="equipControlsTitle">선택된 용품 — 크기</div>
-            <div class="row-actions">
+            <div class="row-actions wrap">
               <button id="equipSmaller" class="small-btn">− 크기</button>
               <button id="equipBigger" class="small-btn">+ 크기</button>
-              <button id="equipRotateBtn" class="small-btn">↻ 회전</button>
               <button id="equipDeselect" class="small-btn">선택 해제</button>
+            </div>
+            <div class="group" id="equipRotateGroup" style="display:none">
+              <label>방향 (<span id="equipRotateLabel">0</span>°)</label>
+              <div class="row-actions">
+                <button id="equipRotateMinus" class="small-btn">− 15°</button>
+                <input type="range" id="equipRotateSlider" min="0" max="359" value="0" />
+                <button id="equipRotatePlus" class="small-btn">+ 15°</button>
+              </div>
             </div>
           </div>
           <div id="equipmentPanel" class="equipment-panel"></div>

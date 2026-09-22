@@ -215,7 +215,7 @@ function equipRadius(e) {
 function allTargets() {
   const arr = [];
   state.teams.forEach((team, ti) => {
-    team.players.forEach(p => arr.push({ ref: p, kind: 'player', teamIndex: ti, r: PLAYER_R }));
+    team.players.forEach(p => arr.push({ ref: p, kind: 'player', teamIndex: ti, r: playerRadius(p) }));
   });
   state.equipment.forEach(e => arr.push({ ref: e, kind: 'equipment', type: e.type, r: equipRadius(e) }));
   state.texts.forEach(t => arr.push({ ref: t, kind: 'text', r: Math.max(16, (t._w || 30) / 2 + 6) }));
@@ -531,28 +531,33 @@ const VEST_COLORS = {
   blue: 'rgba(30,136,229,0.55)',
 };
 
+function playerRadius(p) {
+  return PLAYER_R * (p.scale || 1);
+}
+
 function drawPlayer(p, color, crestImg) {
-  drawShadow(p.x, p.y + PLAYER_R * 0.75, PLAYER_R * 0.9, PLAYER_R * 0.35);
+  const r = playerRadius(p);
+  drawShadow(p.x, p.y + r * 0.75, r * 0.9, r * 0.35);
 
   if (crestImg) {
     ctx.save();
     ctx.beginPath();
-    ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
     ctx.closePath();
     ctx.clip();
-    ctx.drawImage(crestImg, p.x - PLAYER_R, p.y - PLAYER_R, PLAYER_R * 2, PLAYER_R * 2);
+    ctx.drawImage(crestImg, p.x - r, p.y - r, r * 2, r * 2);
     ctx.restore();
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
     ctx.stroke();
   } else {
-    const grad = ctx.createRadialGradient(p.x - 4, p.y - 4, 2, p.x, p.y, PLAYER_R);
+    const grad = ctx.createRadialGradient(p.x - 4, p.y - 4, 2, p.x, p.y, r);
     grad.addColorStop(0, shadeColor(color, 0.35));
     grad.addColorStop(1, shadeColor(color, -0.15));
     ctx.beginPath();
-    ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
     ctx.fillStyle = grad;
     ctx.fill();
     ctx.lineWidth = 2;
@@ -562,7 +567,7 @@ function drawPlayer(p, color, crestImg) {
 
   if (p.vest && VEST_COLORS[p.vest]) {
     ctx.beginPath();
-    ctx.arc(p.x, p.y, PLAYER_R * 0.72, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, r * 0.72, 0, Math.PI * 2);
     ctx.fillStyle = VEST_COLORS[p.vest];
     ctx.fill();
   }
@@ -570,7 +575,7 @@ function drawPlayer(p, color, crestImg) {
   ctx.fillStyle = '#fff';
   ctx.strokeStyle = 'rgba(0,0,0,0.6)';
   ctx.lineWidth = 2.5;
-  ctx.font = 'bold 11px sans-serif';
+  ctx.font = `bold ${Math.round(11 * (p.scale || 1))}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.strokeText(p.num, p.x, p.y);
@@ -802,7 +807,14 @@ function drawEquipmentItem(e) {
   else if (e.type === 'marker') drawMarkerShape(e.x, e.y, e.color);
   else if (e.type === 'cone') drawConeShape(e.x, e.y, e.color);
   else if (e.type === 'mannequin') drawMannequinShape(e.x, e.y, e.color);
-  else if (e.type === 'pole') drawPoleShape(e.x, e.y, e.color);
+  else if (e.type === 'pole') {
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.rotate(e.rot || 0);
+    ctx.translate(-e.x, -e.y);
+    drawPoleShape(e.x, e.y, e.color);
+    ctx.restore();
+  }
   else if (e.type === 'goal') drawGoalShape(e.x, e.y, e.color, GOAL_BASE_W, GOAL_BASE_H, e.rot || 0);
   ctx.restore();
 }
@@ -1153,7 +1165,7 @@ function placeItemAt(data, x, y) {
     renderTeamsPanel();
   } else if (data.kind === 'equipment') {
     const item = { id: nextId(), type: data.type, color: equipSelectedColor[data.type], x: snapped.x, y: snapped.y };
-    if (data.type === 'goal') item.rot = 0;
+    if (data.type === 'goal' || data.type === 'pole') item.rot = 0;
     state.equipment.push(item);
   }
   render();
@@ -1260,6 +1272,8 @@ function renderTeamsPanel() {
         VEST_UI_COLORS.map(v => `<button class="vest-swatch${p.vest === v.key ? ' selected' : ''}" style="background:${v.css}" data-vest="${v.key}" title="${v.key} 조끼"></button>`).join('');
       return `<div class="player-chip" data-player="${p.id}">
         <input type="text" class="player-label-input" value="${escapeHtml(p.num)}" maxlength="3" />
+        <button class="small-btn player-size-btn" data-action="playerSmaller" title="작게">−</button>
+        <button class="small-btn player-size-btn" data-action="playerBigger" title="크게">+</button>
         <div class="vest-swatch-row">${vestSwatches}</div>
         <button class="small-btn player-del-btn" data-action="delPlayer" title="이 선수 삭제">✕</button>
       </div>`;
@@ -1514,6 +1528,15 @@ teamsPanel.addEventListener('click', (e) => {
       renderTeamsPanel();
       render();
     }
+  } else if (action === 'playerSmaller' || action === 'playerBigger') {
+    const chip = e.target.closest('.player-chip');
+    const team = findTeam(id);
+    const player = team && team.players.find(p => p.id === chip.dataset.player);
+    if (player) {
+      const factor = action === 'playerBigger' ? 1.15 : 0.87;
+      player.scale = Math.max(0.5, Math.min(2.2, (player.scale || 1) * factor));
+      render();
+    }
   } else if (action === 'uploadCrest') {
     row.querySelector('.crest-file-input').click();
   } else if (action === 'removeCrest') {
@@ -1564,7 +1587,10 @@ teamsPanel.addEventListener('touchstart', (e) => {
 const equipmentPanel = document.getElementById('equipmentPanel');
 const equipControls = document.getElementById('equipControls');
 const equipControlsTitle = document.getElementById('equipControlsTitle');
-const equipRotateBtn = document.getElementById('equipRotateBtn');
+const equipRotateGroup = document.getElementById('equipRotateGroup');
+const equipRotateSlider = document.getElementById('equipRotateSlider');
+const equipRotateLabel = document.getElementById('equipRotateLabel');
+const ROTATABLE_EQUIP_TYPES = ['goal', 'pole'];
 
 function renderEquipmentPanel() {
   equipmentPanel.innerHTML = EQUIP_TYPES.map(et => {
@@ -1584,7 +1610,7 @@ function renderEquipmentPanel() {
 function addEquipment(type) {
   const pos = cascadePos();
   const item = { id: nextId(), type, color: equipSelectedColor[type], x: pos.x, y: pos.y };
-  if (type === 'goal') item.rot = 0;
+  if (type === 'goal' || type === 'pole') item.rot = 0;
   state.equipment.push(item);
   render();
 }
@@ -1626,9 +1652,25 @@ function updateEquipControlsVisibility() {
     return;
   }
   equipControls.style.display = 'flex';
+  const rotatable = ROTATABLE_EQUIP_TYPES.includes(item.type);
   const label = EQUIP_TYPES.find(t => t.type === item.type).label.replace(/^\S+\s/, '');
-  equipControlsTitle.textContent = `선택된 ${label} — 크기${item.type === 'goal' ? ' / 방향' : ''}`;
-  equipRotateBtn.style.display = item.type === 'goal' ? 'inline-block' : 'none';
+  equipControlsTitle.textContent = `선택된 ${label} — 크기${rotatable ? ' / 방향' : ''}`;
+  equipRotateGroup.style.display = rotatable ? 'flex' : 'none';
+  if (rotatable) {
+    const deg = Math.round(((item.rot || 0) * 180 / Math.PI + 360) % 360);
+    equipRotateSlider.value = deg;
+    equipRotateLabel.textContent = deg;
+  }
+}
+
+function setSelectedEquipRotationDeg(deg) {
+  const item = state.equipment.find(e => e.id === selectedEquipId);
+  if (!item) return;
+  const norm = ((deg % 360) + 360) % 360;
+  item.rot = norm * Math.PI / 180;
+  equipRotateSlider.value = norm;
+  equipRotateLabel.textContent = norm;
+  render();
 }
 
 document.getElementById('equipSmaller').addEventListener('click', () => {
@@ -1643,11 +1685,18 @@ document.getElementById('equipBigger').addEventListener('click', () => {
   item.scale = Math.min(3, (item.scale || 1) * 1.18);
   render();
 });
-equipRotateBtn.addEventListener('click', () => {
+equipRotateSlider.addEventListener('input', (e) => {
+  setSelectedEquipRotationDeg(parseInt(e.target.value, 10));
+});
+document.getElementById('equipRotateMinus').addEventListener('click', () => {
   const item = state.equipment.find(e => e.id === selectedEquipId);
   if (!item) return;
-  item.rot = ((item.rot || 0) + Math.PI / 4) % (Math.PI * 2);
-  render();
+  setSelectedEquipRotationDeg(Math.round((item.rot || 0) * 180 / Math.PI) - 15);
+});
+document.getElementById('equipRotatePlus').addEventListener('click', () => {
+  const item = state.equipment.find(e => e.id === selectedEquipId);
+  if (!item) return;
+  setSelectedEquipRotationDeg(Math.round((item.rot || 0) * 180 / Math.PI) + 15);
 });
 document.getElementById('equipDeselect').addEventListener('click', () => {
   selectedEquipId = null;
