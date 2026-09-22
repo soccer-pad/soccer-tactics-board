@@ -758,10 +758,9 @@ function drawPoleShape(x, y, color) {
   ctx.fill();
 }
 
-function drawGoalShape(x, y, color, w, h, rot) {
+function drawGoalShape(x, y, color, w, h) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate(rot || 0);
 
   drawShadow(0, h / 2 + 3, w / 2 + 4, 5);
 
@@ -797,25 +796,20 @@ function drawGoalShape(x, y, color, w, h, rot) {
 
 function drawEquipmentItem(e) {
   const s = e.scale || 1;
+  const rot = e.rot || 0;
   ctx.save();
-  if (s !== 1) {
+  if (s !== 1 || rot) {
     ctx.translate(e.x, e.y);
-    ctx.scale(s, s);
+    if (rot) ctx.rotate(rot);
+    if (s !== 1) ctx.scale(s, s);
     ctx.translate(-e.x, -e.y);
   }
   if (e.type === 'ball') drawBallShape(e.x, e.y, e.color);
   else if (e.type === 'marker') drawMarkerShape(e.x, e.y, e.color);
   else if (e.type === 'cone') drawConeShape(e.x, e.y, e.color);
   else if (e.type === 'mannequin') drawMannequinShape(e.x, e.y, e.color);
-  else if (e.type === 'pole') {
-    ctx.save();
-    ctx.translate(e.x, e.y);
-    ctx.rotate(e.rot || 0);
-    ctx.translate(-e.x, -e.y);
-    drawPoleShape(e.x, e.y, e.color);
-    ctx.restore();
-  }
-  else if (e.type === 'goal') drawGoalShape(e.x, e.y, e.color, GOAL_BASE_W, GOAL_BASE_H, e.rot || 0);
+  else if (e.type === 'pole') drawPoleShape(e.x, e.y, e.color);
+  else if (e.type === 'goal') drawGoalShape(e.x, e.y, e.color, GOAL_BASE_W, GOAL_BASE_H);
   ctx.restore();
 }
 
@@ -1164,8 +1158,7 @@ function placeItemAt(data, x, y) {
     team.players.push({ id: nextId(), num: String(team.players.length + 1), x: snapped.x, y: snapped.y });
     renderTeamsPanel();
   } else if (data.kind === 'equipment') {
-    const item = { id: nextId(), type: data.type, color: equipSelectedColor[data.type], x: snapped.x, y: snapped.y };
-    if (data.type === 'goal' || data.type === 'pole') item.rot = 0;
+    const item = { id: nextId(), type: data.type, color: equipSelectedColor[data.type], x: snapped.x, y: snapped.y, rot: 0 };
     state.equipment.push(item);
   }
   render();
@@ -1590,7 +1583,7 @@ const equipControlsTitle = document.getElementById('equipControlsTitle');
 const equipRotateGroup = document.getElementById('equipRotateGroup');
 const equipRotateSlider = document.getElementById('equipRotateSlider');
 const equipRotateLabel = document.getElementById('equipRotateLabel');
-const ROTATABLE_EQUIP_TYPES = ['goal', 'pole'];
+const ROTATABLE_EQUIP_TYPES = EQUIP_TYPES.map(t => t.type);
 
 function renderEquipmentPanel() {
   equipmentPanel.innerHTML = EQUIP_TYPES.map(et => {
@@ -1609,8 +1602,7 @@ function renderEquipmentPanel() {
 
 function addEquipment(type) {
   const pos = cascadePos();
-  const item = { id: nextId(), type, color: equipSelectedColor[type], x: pos.x, y: pos.y };
-  if (type === 'goal' || type === 'pole') item.rot = 0;
+  const item = { id: nextId(), type, color: equipSelectedColor[type], x: pos.x, y: pos.y, rot: 0 };
   state.equipment.push(item);
   render();
 }
