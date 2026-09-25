@@ -8,17 +8,44 @@
 </head>
 <body>
   <div class="rotate-wrap" id="rotateWrap">
+    <header class="top-bar">
+      <div class="top-bar-left">
+        <span class="app-title">⚽ 전자 축구작전판</span>
+      </div>
+      <div class="top-bar-right">
+        <button id="undoTopBtn" class="icon-btn" aria-label="실행취소" title="실행취소">↶</button>
+        <button id="redoTopBtn" class="icon-btn" aria-label="다시실행" title="다시실행">↷</button>
+        <span class="top-bar-sep"></span>
+        <button id="shareTopBtn" class="icon-btn" aria-label="공유" title="공유">🔗</button>
+        <button id="saveTopBtn" class="icon-btn" aria-label="저장" title="저장">💾</button>
+        <button id="settingsTopBtn" class="icon-btn" aria-label="설정" title="설정">⚙️</button>
+      </div>
+    </header>
+
     <div class="app-shell">
+      <nav class="side-rail" id="sideRail">
+        <button class="rail-btn active" data-tab="team"><span class="rail-icon">👥</span><span class="rail-label">선수</span></button>
+        <button class="rail-btn" data-tab="equip"><span class="rail-icon">🧰</span><span class="rail-label">용품</span></button>
+        <div class="rail-sep"></div>
+        <button class="rail-btn" id="railMoveBtn"><span class="rail-icon">✛</span><span class="rail-label">이동</span></button>
+        <button class="rail-btn" id="railDrawBtn"><span class="rail-icon">✏️</span><span class="rail-label">그리기</span></button>
+        <div class="rail-sep"></div>
+        <button class="rail-btn" data-tab="line"><span class="rail-icon">➰</span><span class="rail-label">선</span></button>
+        <button class="rail-btn" data-tab="text"><span class="rail-icon">📝</span><span class="rail-label">설명</span></button>
+      </nav>
+
       <div class="stage">
         <div class="board-wrap" id="boardWrap">
           <canvas id="board" width="940" height="644"></canvas>
         </div>
-        <div class="zoom-controls">
-          <button id="zoomOutBtn" class="small-btn">− 축소</button>
-          <span id="zoomLabel" class="zoom-label">100%</span>
-          <button id="zoomInBtn" class="small-btn">+ 확대</button>
-          <button id="zoomResetBtn" class="small-btn">원본</button>
+
+        <div class="float-zoom">
+          <button id="zoomInBtn" class="float-btn" aria-label="확대">+</button>
+          <span id="zoomLabel" class="float-zoom-label">100%</span>
+          <button id="zoomOutBtn" class="float-btn" aria-label="축소">−</button>
+          <button id="zoomResetBtn" class="float-btn float-btn-reset" aria-label="원본 크기" title="원본 크기">⤢</button>
         </div>
+
         <p class="hint" id="hint">이동 모드: 드래그해서 옮기세요. 더블클릭(또는 길게 누르기)하거나 삭제 영역으로 끌면 삭제됩니다. 확대 중엔 손가락 두 개로 오므리거나 벌려서 확대/이동하세요.</p>
       </div>
 
@@ -177,15 +204,6 @@
         </section>
       </div>
     </div>
-
-    <nav class="bottom-bar" id="bottomBar">
-      <button class="bottombar-btn active" data-tab="team" aria-label="팀"><span class="bottombar-icon">👥</span></button>
-      <button class="bottombar-btn" data-tab="equip" aria-label="용품"><span class="bottombar-icon">🧰</span></button>
-      <button class="bottombar-btn" data-tab="line" aria-label="선"><span class="bottombar-icon">➰</span></button>
-      <button class="bottombar-btn" data-tab="text" aria-label="설명"><span class="bottombar-icon">📝</span></button>
-      <button class="bottombar-btn" data-tab="option" aria-label="옵션"><span class="bottombar-icon">⚙️</span></button>
-      <button class="bottombar-btn" data-tab="save" aria-label="저장"><span class="bottombar-icon">💾</span></button>
-    </nav>
   </div>
 
   <div id="cropModal" class="crop-modal" style="display:none">

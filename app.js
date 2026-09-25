@@ -894,14 +894,14 @@ const bottomSheet = document.getElementById('bottomSheet');
 let bottomSheetOpen = false;
 
 function openSheet(name) {
-  document.querySelectorAll('.bottombar-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.rail-btn[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
   bottomSheet.classList.add('open');
   bottomSheetOpen = true;
 }
 
 function closeSheet() {
-  document.querySelectorAll('.bottombar-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.rail-btn[data-tab]').forEach(b => b.classList.remove('active'));
   bottomSheet.classList.remove('open');
   bottomSheetOpen = false;
 }
@@ -911,7 +911,7 @@ function switchTab(name) {
   openSheet(name);
 }
 
-document.querySelectorAll('.bottombar-btn').forEach(btn => {
+document.querySelectorAll('.rail-btn[data-tab]').forEach(btn => {
   btn.addEventListener('click', () => {
     if (bottomSheetOpen && btn.classList.contains('active')) {
       closeSheet();
@@ -919,6 +919,24 @@ document.querySelectorAll('.bottombar-btn').forEach(btn => {
       openSheet(btn.dataset.tab);
     }
   });
+});
+
+// ---- 상단 바 (실행취소/다시실행/공유/저장/설정) ----
+document.getElementById('undoTopBtn').addEventListener('click', undo);
+document.getElementById('redoTopBtn').addEventListener('click', redo);
+document.getElementById('saveTopBtn').addEventListener('click', () => openSheet('save'));
+document.getElementById('settingsTopBtn').addEventListener('click', () => openSheet('option'));
+document.getElementById('shareTopBtn').addEventListener('click', () => {
+  openSheet('save');
+  document.getElementById('makeShareLinkBtn').click();
+});
+
+// ---- 왼쪽 레일의 이동/그리기 모드 바로가기 ----
+document.getElementById('railMoveBtn').addEventListener('click', () => {
+  if (mode !== 'move') { mode = 'move'; refreshModeButtons(); }
+});
+document.getElementById('railDrawBtn').addEventListener('click', () => {
+  if (mode !== 'draw') { mode = 'draw'; refreshModeButtons(); }
 });
 
 // ---- 삭제 공통 로직 (더블클릭 / 길게 누르기 / 삭제 영역 드롭에서 공용) ----
@@ -1253,18 +1271,31 @@ document.addEventListener('touchcancel', () => {
   touchDragData = null;
 });
 
-// ---- 되돌리기 ----
+// ---- 되돌리기 / 다시실행 ----
+let redoStack = [];
+
 function pushHistory() {
   history.push(JSON.parse(JSON.stringify(state.arrows)));
   if (history.length > 50) history.shift();
+  redoStack = [];
 }
 
 function undo() {
+  if (history.length === 0 && state.arrows.length === 0) return;
+  redoStack.push(JSON.parse(JSON.stringify(state.arrows)));
+  if (redoStack.length > 50) redoStack.shift();
   if (history.length === 0) {
-    if (state.arrows.length > 0) state.arrows.pop();
+    state.arrows.pop();
   } else {
     state.arrows = history.pop();
   }
+  render();
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  history.push(JSON.parse(JSON.stringify(state.arrows)));
+  state.arrows = redoStack.pop();
   render();
 }
 
@@ -1879,6 +1910,8 @@ function refreshModeButtons() {
     b.textContent = mode === 'move' ? '이동 모드' : '그리기 모드';
     b.className = 'mode-toggle-btn ' + (mode === 'move' ? 'mode-move' : 'mode-draw');
   });
+  document.getElementById('railMoveBtn').classList.toggle('active', mode === 'move');
+  document.getElementById('railDrawBtn').classList.toggle('active', mode === 'draw');
   hint.textContent = mode === 'move'
     ? '이동 모드: 드래그해서 옮기세요. 더블클릭(또는 길게 누르기)하거나 삭제 영역으로 끌면 삭제됩니다. 확대 중엔 손가락 두 개로 오므리거나 벌려서 확대/이동하세요.'
     : '그리기 모드: 드래그해서 선을 그리세요. 이동 모드에서 선을 더블클릭하면 삭제됩니다.';
@@ -2052,6 +2085,7 @@ initState();
 loadStateFromShareLinkIfPresent();
 setFieldGeometry();
 applyZoomStyle();
+refreshModeButtons();
 renderTeamsPanel();
 renderEquipmentPanel();
 renderLineColorPanel();

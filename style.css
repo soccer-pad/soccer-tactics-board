@@ -51,23 +51,129 @@ body {
   }
 }
 
-/* ---- 전체 레이아웃: 필드(캔버스) + 하단 바텀시트/바텀바 ---- */
+/* ---- 상단 바 (제목 + 실행취소/다시실행 + 공유/저장/설정) ---- */
+.top-bar {
+  flex: 0 0 auto;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: #141414;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.top-bar-left, .top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.app-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #eee;
+  white-space: nowrap;
+}
+
+.top-bar-sep {
+  width: 1px;
+  height: 22px;
+  background: rgba(255,255,255,0.1);
+  margin: 0 4px;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.07);
+  background: #1e1e1e;
+  color: #cfd3d8;
+  font-size: 16px;
+}
+
+.icon-btn:hover {
+  background: #2a2a2a;
+}
+
+/* ---- 전체 레이아웃: 왼쪽 도구 레일 + 필드(캔버스) ---- */
 .app-shell {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   width: 100%;
 }
 
-.stage {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
+/* ---- 왼쪽 도구 레일 (항상 고정 표시) ---- */
+.side-rail {
+  flex: 0 0 auto;
+  width: 78px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 10px 6px;
+  background: rgba(14, 14, 14, 0.95);
+  border-right: 1px solid rgba(255,255,255,0.06);
+  overflow-y: auto;
+}
+
+.rail-sep {
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+  margin: 4px 4px;
+}
+
+.rail-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 12px 4px;
+  gap: 3px;
+  padding: 9px 2px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  color: #8b93a1;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.rail-icon {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.rail-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+
+.rail-btn:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.rail-btn.active {
+  background: rgba(74,138,82,0.25);
+  color: #fff;
+}
+
+.stage {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
 }
 
 .board-wrap {
@@ -92,18 +198,52 @@ canvas#board {
   margin: auto;
 }
 
-.zoom-controls {
+/* ---- 오른쪽 위에 떠 있는 확대/축소 버튼 ---- */
+.float-zoom {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  flex: 0 0 auto;
+  gap: 6px;
+  background: rgba(20, 20, 20, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 8px 6px;
+  z-index: 20;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
 }
 
-.zoom-label {
-  font-size: 12px;
-  color: #aaa;
-  min-width: 42px;
+.float-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 10px;
+  border: none;
+  background: #232323;
+  color: #eee;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.float-btn:hover {
+  background: #2f2f2f;
+}
+
+.float-btn-reset {
+  font-size: 13px;
+}
+
+.float-zoom-label {
+  font-size: 10px;
+  color: #9aa3af;
   text-align: center;
 }
 
@@ -114,10 +254,10 @@ canvas#board {
 /* ---- 하단 바텀시트 (필드 크기는 그대로 두고, 반투명하게 위에 떠서 열림) ---- */
 .bottom-sheet {
   position: absolute;
-  left: 8px;
+  left: 90px;
   right: 8px;
-  bottom: 70px;
-  max-height: 46vh;
+  bottom: 8px;
+  max-height: 50vh;
   background: rgba(20, 20, 20, 0.96);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -150,47 +290,6 @@ canvas#board {
 
 .tab-panels {
   padding: 6px 14px 14px;
-}
-
-/* ---- 하단 아이콘 바 (항상 고정 표시, 크기 변하지 않음) ---- */
-.bottom-bar {
-  position: relative;
-  z-index: 41;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 62px;
-  padding: 8px;
-  background: rgba(14, 14, 14, 0.9);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-top: 1px solid rgba(255,255,255,0.06);
-}
-
-.bottombar-btn {
-  flex: 1;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 14px;
-  font-size: 20px;
-  color: #8b93a1;
-  padding: 0;
-  transition: background 0.15s ease, transform 0.12s ease, color 0.15s ease;
-}
-
-.bottombar-btn:hover {
-  background: rgba(255,255,255,0.06);
-}
-
-.bottombar-btn.active {
-  background: rgba(74,138,82,0.25);
-  color: #fff;
-  transform: translateY(-2px);
 }
 
 .tab-panel {
@@ -319,7 +418,7 @@ input[type="text"] {
 .trash-zone {
   position: fixed;
   left: 50%;
-  bottom: 78px;
+  bottom: 26px;
   transform: translateX(-50%);
   background: #b71c1c;
   color: #fff;
