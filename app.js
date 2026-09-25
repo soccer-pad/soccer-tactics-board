@@ -268,7 +268,7 @@ function drawField() {
 }
 
 function drawPitchBase() {
-  ctx.fillStyle = '#1b1f24';
+  ctx.fillStyle = '#0e0e0e';
   ctx.fillRect(0, 0, W, H);
 
   ctx.fillStyle = '#2e7d32';
