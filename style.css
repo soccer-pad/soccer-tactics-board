@@ -7,10 +7,25 @@ html, body {
 body {
   margin: 0;
   padding: 0;
-  background: #1b1f24;
+  background: #14171c;
   color: #eee;
   font-family: "Malgun Gothic", "Segoe UI", sans-serif;
   overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* ---- 화면 회전 래퍼: 세로로 들면 CSS로 강제로 가로처럼 보이게 ---- */
@@ -56,9 +71,9 @@ body {
 }
 
 .board-wrap {
-  border-radius: 8px;
+  border-radius: 16px;
   overflow: auto;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
   max-width: 100%;
   max-height: 100%;
   flex: 1 1 auto;
@@ -99,24 +114,42 @@ canvas#board {
 /* ---- 하단 바텀시트 (필드 크기는 그대로 두고, 반투명하게 위에 떠서 열림) ---- */
 .bottom-sheet {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 54px;
+  left: 8px;
+  right: 8px;
+  bottom: 70px;
   max-height: 46vh;
-  background: rgba(20, 24, 30, 0.94);
-  transform: translateY(100%);
-  transition: transform 0.22s ease;
+  background: rgba(26, 30, 37, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.06);
+  transform: translateY(10px) scale(0.98);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.22s cubic-bezier(0.22,1,0.36,1), opacity 0.18s ease;
   overflow-y: auto;
   z-index: 40;
-  box-shadow: 0 -6px 20px rgba(0,0,0,0.4);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.45);
 }
 
 .bottom-sheet.open {
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bottom-sheet::before {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.16);
+  margin: 10px auto 0;
 }
 
 .tab-panels {
-  padding: 10px 12px;
+  padding: 6px 14px 14px;
 }
 
 /* ---- 하단 아이콘 바 (항상 고정 표시, 크기 변하지 않음) ---- */
@@ -125,31 +158,39 @@ canvas#board {
   z-index: 41;
   flex: 0 0 auto;
   display: flex;
-  height: 54px;
-  background: #1f242b;
-  border-top: 1px solid #333;
+  align-items: center;
+  gap: 4px;
+  height: 62px;
+  padding: 8px;
+  background: rgba(22, 25, 31, 0.9);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(255,255,255,0.06);
 }
 
 .bottombar-btn {
   flex: 1;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: none;
-  border-radius: 0;
-  font-size: 22px;
-  color: #aaa;
+  border-radius: 14px;
+  font-size: 20px;
+  color: #8b93a1;
   padding: 0;
+  transition: background 0.15s ease, transform 0.12s ease, color 0.15s ease;
 }
 
 .bottombar-btn:hover {
-  background: #2a303a;
+  background: rgba(255,255,255,0.06);
 }
 
 .bottombar-btn.active {
-  background: #2e7d32;
+  background: rgba(46,125,50,0.25);
   color: #fff;
+  transform: translateY(-2px);
 }
 
 .tab-panel {
@@ -166,43 +207,54 @@ canvas#board {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
-  color: #bbb;
-  font-weight: 600;
+  font-size: 14px;
+  color: #eee;
+  font-weight: 700;
+  letter-spacing: 0.1px;
 }
 
 .panel-head.sub {
   margin-top: 6px;
-  padding-top: 10px;
-  border-top: 1px solid #333;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  font-size: 12px;
+  color: #9aa3af;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 700;
 }
 
 .group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .group label {
   font-size: 12px;
-  color: #aaa;
+  color: #9aa3af;
 }
 
 select, button, input[type="text"] {
   font-size: 14px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #444;
-  background: #3a4049;
+  padding: 8px 12px;
+  border-radius: 11px;
+  border: 1px solid rgba(255,255,255,0.07);
+  background: #2b313a;
   color: #eee;
+  transition: background 0.15s ease, transform 0.08s ease;
 }
 
 button {
   cursor: pointer;
 }
 
+button:active {
+  transform: scale(0.96);
+}
+
 select:hover, button:hover {
-  background: #464d58;
+  background: #383f4a;
 }
 
 input[type="text"] {
@@ -214,6 +266,7 @@ input[type="text"] {
   background: #2e7d32;
   border-color: #2e7d32;
   color: #fff;
+  box-shadow: 0 2px 10px rgba(46,125,50,0.35);
 }
 
 .accent:hover {
@@ -233,35 +286,40 @@ input[type="text"] {
 .mode-toggle-btn.mode-move {
   background: #2e7d32;
   border-color: #2e7d32;
+  box-shadow: 0 2px 8px rgba(46,125,50,0.35);
 }
 
 .mode-toggle-btn.mode-draw {
   background: #d84315;
   border-color: #d84315;
+  box-shadow: 0 2px 8px rgba(216,67,21,0.35);
 }
 
 .line-type-btn.active {
   background: #2e7d32;
   border-color: #2e7d32;
   color: #fff;
+  box-shadow: 0 2px 8px rgba(46,125,50,0.35);
 }
 
 .line-arrow-btn.active {
   background: #00838f;
   border-color: #00838f;
   color: #fff;
+  box-shadow: 0 2px 8px rgba(0,131,143,0.35);
 }
 
 #gridToggleBtn.active {
   background: #00838f;
   border-color: #00838f;
   color: #fff;
+  box-shadow: 0 2px 8px rgba(0,131,143,0.35);
 }
 
 .trash-zone {
   position: fixed;
   left: 50%;
-  bottom: 66px;
+  bottom: 78px;
   transform: translateX(-50%);
   background: #b71c1c;
   color: #fff;
@@ -310,13 +368,14 @@ input[type="text"] {
 }
 
 .team-row {
-  background: #1f242b;
-  border-radius: 8px;
-  padding: 10px;
+  background: #232830;
+  border-radius: 14px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  border-left: 5px solid #888;
+  gap: 9px;
+  border-left: 4px solid #888;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.22);
 }
 
 .team-row .team-title {
@@ -363,10 +422,13 @@ input[type="text"] {
   border: 2px solid transparent;
   cursor: pointer;
   padding: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  transition: transform 0.12s ease;
 }
 
 .swatch.selected {
   border-color: #fff;
+  transform: scale(1.15);
 }
 
 .team-row select {
@@ -386,7 +448,8 @@ input[type="text"] {
   background-size: cover;
   background-position: center;
   background-color: #3a4049;
-  border: 1px solid #555;
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
   flex-shrink: 0;
 }
 
@@ -402,9 +465,9 @@ input[type="text"] {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #262b33;
-  border-radius: 6px;
-  padding: 4px 6px;
+  background: #2a303a;
+  border-radius: 10px;
+  padding: 5px 7px;
 }
 
 .player-chip .player-label-input {
@@ -429,10 +492,13 @@ input[type="text"] {
   border: 2px solid transparent;
   cursor: pointer;
   padding: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  transition: transform 0.12s ease;
 }
 
 .vest-swatch.selected {
   border-color: #fff;
+  transform: scale(1.15);
 }
 
 .vest-swatch.none-swatch {
@@ -506,12 +572,13 @@ input[type="text"] {
 }
 
 .equip-row {
-  background: #1f242b;
-  border-radius: 8px;
-  padding: 10px;
+  background: #232830;
+  border-radius: 14px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.22);
 }
 
 .equip-row .equip-title {
@@ -527,12 +594,13 @@ input[type="text"] {
 }
 
 .goal-controls {
-  background: #1f242b;
-  border-radius: 8px;
-  padding: 10px;
+  background: #232830;
+  border-radius: 14px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.22);
 }
 
 /* ---- 텍스트(설명) 패널 ---- */
@@ -546,9 +614,9 @@ input[type="text"] {
   display: flex;
   gap: 6px;
   align-items: center;
-  background: #1f242b;
-  border-radius: 6px;
-  padding: 6px;
+  background: #232830;
+  border-radius: 10px;
+  padding: 7px;
 }
 
 .text-item input[type="text"] {
@@ -575,9 +643,9 @@ input[type="text"] {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  background: #1f242b;
-  border-radius: 6px;
-  padding: 8px;
+  background: #232830;
+  border-radius: 12px;
+  padding: 10px;
 }
 
 .save-item .save-name {
@@ -609,8 +677,9 @@ input[type="text"] {
 }
 
 .crop-modal-inner {
-  background: #262b33;
-  border-radius: 12px;
+  background: #232830;
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
   padding: 20px;
   display: flex;
   flex-direction: column;
