@@ -1,36 +1,57 @@
 * { box-sizing: border-box; }
 
+html, body {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  padding: 20px;
+  padding: 0;
   background: #1b1f24;
   color: #eee;
   font-family: "Malgun Gothic", "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+/* ---- 화면 회전 래퍼: 세로로 들면 CSS로 강제로 가로처럼 보이게 ---- */
+.rotate-wrap {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
-  align-items: center;
 }
 
-h1 {
-  margin: 0 0 16px 0;
-  font-size: 24px;
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate-wrap {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vh;
+    width: 100dvh;
+    height: 100vw;
+    transform-origin: top left;
+    transform: rotate(90deg) translateY(-100%);
+  }
 }
 
-/* ---- 전체 레이아웃: 필드(메인) + 사이드바(탭) ---- */
+/* ---- 전체 레이아웃: 필드(캔버스) + 하단 바텀시트/바텀바 ---- */
 .app-shell {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
   width: 100%;
-  max-width: 1360px;
 }
 
 .stage {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  padding: 8px 12px 4px;
 }
 
 .board-wrap {
@@ -38,7 +59,10 @@ h1 {
   overflow: auto;
   box-shadow: 0 4px 20px rgba(0,0,0,0.5);
   max-width: 100%;
-  max-height: 75vh;
+  max-height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
 }
 
 canvas#board {
@@ -46,14 +70,18 @@ canvas#board {
   cursor: grab;
   touch-action: none;
   max-width: 100%;
+  max-height: 100%;
+  width: auto;
   height: auto;
+  margin: auto;
 }
 
 .zoom-controls {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 6px;
+  flex: 0 0 auto;
 }
 
 .zoom-label {
@@ -64,48 +92,56 @@ canvas#board {
 }
 
 .hint {
-  margin-top: 10px;
-  font-size: 13px;
-  color: #999;
-  text-align: center;
+  display: none;
 }
 
-.sidebar {
-  flex: 0 0 380px;
-  width: 380px;
+/* ---- 하단 바텀시트 (탭 내용이 여기로 올라옴, 필드는 가리지 않음) ---- */
+.bottom-sheet {
+  flex: 0 0 auto;
+  max-height: 0;
+  overflow: hidden;
   background: #262b33;
-  border-radius: 10px;
-  padding: 12px;
-  max-height: 700px;
-  display: flex;
-  flex-direction: column;
+  transition: max-height 0.22s ease;
 }
 
-.tab-bar {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-  flex-shrink: 0;
-}
-
-.tab-btn {
-  flex: 1;
-  padding: 8px 2px;
-  font-size: 12px;
-  border-radius: 8px;
-  text-align: center;
-  background: #1f242b;
-}
-
-.tab-btn.active {
-  background: #2e7d32;
-  border-color: #2e7d32;
-  color: #fff;
+.bottom-sheet.open {
+  max-height: 46vh;
+  overflow-y: auto;
 }
 
 .tab-panels {
-  overflow-y: auto;
-  padding-right: 4px;
+  padding: 10px 12px;
+}
+
+/* ---- 하단 아이콘 바 (항상 고정 표시) ---- */
+.bottom-bar {
+  flex: 0 0 auto;
+  display: flex;
+  height: 54px;
+  background: #1f242b;
+  border-top: 1px solid #333;
+}
+
+.bottombar-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-size: 22px;
+  color: #aaa;
+  padding: 0;
+}
+
+.bottombar-btn:hover {
+  background: #2a303a;
+}
+
+.bottombar-btn.active {
+  background: #2e7d32;
+  color: #fff;
 }
 
 .tab-panel {
@@ -217,7 +253,7 @@ input[type="text"] {
 .trash-zone {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  bottom: 66px;
   transform: translateX(-50%);
   background: #b71c1c;
   color: #fff;
@@ -618,39 +654,3 @@ input[type="range"] {
   width: 100%;
 }
 
-@media (max-width: 900px) {
-  .app-shell {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .sidebar {
-    width: 100%;
-    flex: 1 1 auto;
-    max-height: none;
-  }
-}
-
-/* ---- 화면 크게 보기 (몰입 모드) ---- */
-#immersiveToggleBtn.active {
-  background: #2e7d32;
-  border-color: #2e7d32;
-  color: #fff;
-}
-
-body.immersive h1,
-body.immersive .hint,
-body.immersive .sidebar {
-  display: none;
-}
-
-body.immersive {
-  padding: 10px;
-}
-
-body.immersive .board-wrap {
-  max-height: 90vh;
-}
-
-body.immersive .app-shell {
-  max-width: 100%;
-}

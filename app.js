@@ -889,14 +889,36 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-// ---- 탭 전환 ----
-function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+// ---- 하단 시트 (탭 전환 + 열고 닫기) ----
+const bottomSheet = document.getElementById('bottomSheet');
+let bottomSheetOpen = false;
+
+function openSheet(name) {
+  document.querySelectorAll('.bottombar-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+  bottomSheet.classList.add('open');
+  bottomSheetOpen = true;
 }
 
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+function closeSheet() {
+  document.querySelectorAll('.bottombar-btn').forEach(b => b.classList.remove('active'));
+  bottomSheet.classList.remove('open');
+  bottomSheetOpen = false;
+}
+
+// 다른 곳에서 특정 탭을 열어야 할 때 쓰는 함수 (예: 저장 불러오기 후 팀 탭 유지 등)
+function switchTab(name) {
+  openSheet(name);
+}
+
+document.querySelectorAll('.bottombar-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (bottomSheetOpen && btn.classList.contains('active')) {
+      closeSheet();
+    } else {
+      openSheet(btn.dataset.tab);
+    }
+  });
 });
 
 // ---- 삭제 공통 로직 (더블클릭 / 길게 누르기 / 삭제 영역 드롭에서 공용) ----
@@ -964,7 +986,6 @@ function onDown(evt) {
     dragTarget = findTargetAt(x, y, dragIsTouch ? TOUCH_HIT_TOLERANCE : 4);
     if (dragTarget && dragTarget.kind === 'equipment') {
       selectedEquipId = dragTarget.ref.id;
-      switchTab('equip');
     } else {
       selectedEquipId = null;
     }
@@ -1098,13 +1119,6 @@ document.getElementById('zoomResetBtn').addEventListener('click', () => {
   boardWrap.scrollTop = 0;
 });
 
-// ---- 화면 크게 보기 (사이드바 숨기고 필드를 크게) ----
-const immersiveToggleBtn = document.getElementById('immersiveToggleBtn');
-immersiveToggleBtn.addEventListener('click', () => {
-  const on = document.body.classList.toggle('immersive');
-  immersiveToggleBtn.classList.toggle('active', on);
-  immersiveToggleBtn.textContent = on ? '⛶ 패널과 함께 보기' : '⛶ 화면 크게 보기';
-});
 
 function touchDist(t1, t2) { return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY); }
 function touchMid(t1, t2) { return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 }; }
