@@ -629,3 +629,28 @@ input[type="range"] {
     max-height: none;
   }
 }
+
+/* ---- 화면 크게 보기 (몰입 모드) ---- */
+#immersiveToggleBtn.active {
+  background: #2e7d32;
+  border-color: #2e7d32;
+  color: #fff;
+}
+
+body.immersive h1,
+body.immersive .hint,
+body.immersive .sidebar {
+  display: none;
+}
+
+body.immersive {
+  padding: 10px;
+}
+
+body.immersive .board-wrap {
+  max-height: 90vh;
+}
+
+body.immersive .app-shell {
+  max-width: 100%;
+}

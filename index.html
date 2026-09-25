@@ -19,6 +19,7 @@
         <span id="zoomLabel" class="zoom-label">100%</span>
         <button id="zoomInBtn" class="small-btn">+ 확대</button>
         <button id="zoomResetBtn" class="small-btn">원본</button>
+        <button id="immersiveToggleBtn" class="small-btn">⛶ 화면 크게 보기</button>
       </div>
       <p class="hint" id="hint">이동 모드: 드래그해서 옮기세요. 더블클릭(또는 길게 누르기)하거나 삭제 영역으로 끌면 삭제됩니다. 확대 중엔 손가락 두 개로 오므리거나 벌려서 확대/이동하세요.</p>
     </div>
@@ -168,6 +169,17 @@
             <button id="saveBoardBtn" class="small-btn accent">저장</button>
           </div>
           <div id="savesList" class="save-list"></div>
+
+          <div class="panel-head sub"><span>지인에게 공유하기</span></div>
+          <p class="empty-msg" style="padding:0">지금 작전판 내용 그대로 열어볼 수 있는 링크를 만들어요. 로그인 없이 링크만 보내면 상대방도 똑같이 볼 수 있어요.</p>
+          <div class="row-actions wrap">
+            <button id="makeShareLinkBtn" class="small-btn accent">공유 링크 만들기</button>
+          </div>
+          <div class="row-actions" id="shareLinkRow" style="display:none">
+            <input type="text" id="shareLinkInput" readonly />
+            <button id="copyShareLinkBtn" class="small-btn">복사</button>
+          </div>
+
           <div class="panel-head sub"><span>기타</span></div>
           <div class="row-actions wrap">
             <button id="exportBtn" class="small-btn">이미지로 저장</button>

@@ -168,9 +168,15 @@ function ensureStateDefaults() {
 
 let mode = 'move'; // 'move' | 'draw'
 let dragTarget = null;
+let dragIsTouch = false;
 let currentDraw = null;
 let history = [];
 let isPointerDown = false;
+
+// 터치(손가락)는 마우스보다 부정확하고, 손가락에 아이템이 가려지는 문제가 있어
+// 잡을 때 판정 범위를 넓히고, 드래그 중엔 손가락 위쪽으로 살짝 띄워서 보여준다.
+const TOUCH_HIT_TOLERANCE = 18;
+const TOUCH_DRAG_LIFT = 32;
 
 // ---- 색상 유틸 ----
 function shadeColor(hex, percent) {
@@ -222,12 +228,12 @@ function allTargets() {
   return arr;
 }
 
-function findTargetAt(x, y) {
+function findTargetAt(x, y, tolerance = 4) {
   const all = allTargets();
   for (let i = all.length - 1; i >= 0; i--) {
     const t = all[i];
     const d = Math.hypot(t.ref.x - x, t.ref.y - y);
-    if (d <= t.r + 4) return t;
+    if (d <= t.r + tolerance) return t;
   }
   return null;
 }
@@ -908,8 +914,8 @@ function deleteTarget(t) {
   }
 }
 
-function deleteAt(x, y) {
-  const t = findTargetAt(x, y);
+function deleteAt(x, y, tolerance = 4) {
+  const t = findTargetAt(x, y, tolerance);
   if (t) {
     deleteTarget(t);
     render();
@@ -952,9 +958,10 @@ function onDown(evt) {
   evt.preventDefault();
   const { x, y } = getPos(evt);
   isPointerDown = true;
+  dragIsTouch = !!evt.touches;
 
   if (mode === 'move') {
-    dragTarget = findTargetAt(x, y);
+    dragTarget = findTargetAt(x, y, dragIsTouch ? TOUCH_HIT_TOLERANCE : 4);
     if (dragTarget && dragTarget.kind === 'equipment') {
       selectedEquipId = dragTarget.ref.id;
       switchTab('equip');
@@ -973,7 +980,7 @@ function onDown(evt) {
       clearTimeout(longPressTimer);
       longPressTimer = setTimeout(() => {
         if (!longPressStart) return;
-        const deleted = deleteAt(longPressStart.x, longPressStart.y);
+        const deleted = deleteAt(longPressStart.x, longPressStart.y, TOUCH_HIT_TOLERANCE);
         if (deleted) {
           dragTarget = null;
           isPointerDown = false;
@@ -1011,7 +1018,8 @@ function onMove(evt) {
     const { clientX, clientY } = getClientXY(evt);
     trashZone.classList.toggle('hover', isOverTrash(clientX, clientY));
 
-    const snapped = maybeSnap(clamp(x, 10, W - 10), clamp(y, 10, H - 10));
+    const lift = dragIsTouch ? TOUCH_DRAG_LIFT : 0;
+    const snapped = maybeSnap(clamp(x, 10, W - 10), clamp(y - lift, 10, H - 10));
     dragTarget.ref.x = snapped.x;
     dragTarget.ref.y = snapped.y;
     render();
@@ -1088,6 +1096,14 @@ document.getElementById('zoomResetBtn').addEventListener('click', () => {
   setZoom(1);
   boardWrap.scrollLeft = 0;
   boardWrap.scrollTop = 0;
+});
+
+// ---- 화면 크게 보기 (사이드바 숨기고 필드를 크게) ----
+const immersiveToggleBtn = document.getElementById('immersiveToggleBtn');
+immersiveToggleBtn.addEventListener('click', () => {
+  const on = document.body.classList.toggle('immersive');
+  immersiveToggleBtn.classList.toggle('active', on);
+  immersiveToggleBtn.textContent = on ? '⛶ 패널과 함께 보기' : '⛶ 화면 크게 보기';
 });
 
 function touchDist(t1, t2) { return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY); }
@@ -1962,8 +1978,64 @@ savesList.addEventListener('click', (e) => {
   }
 });
 
+// ---- 공유 링크 (로그인 없이, 링크 하나로 지인에게 작전 전달) ----
+function encodeStateToShareHash(st) {
+  return btoa(unescape(encodeURIComponent(JSON.stringify(st))));
+}
+function decodeStateFromShareHash(hash) {
+  return JSON.parse(decodeURIComponent(escape(atob(hash))));
+}
+
+const shareLinkRow = document.getElementById('shareLinkRow');
+const shareLinkInput = document.getElementById('shareLinkInput');
+
+document.getElementById('makeShareLinkBtn').addEventListener('click', () => {
+  let url;
+  try {
+    const encoded = encodeStateToShareHash(state);
+    url = location.origin + location.pathname + '#s=' + encoded;
+  } catch (e) {
+    alert('링크를 만들지 못했습니다.');
+    return;
+  }
+  shareLinkInput.value = url;
+  shareLinkRow.style.display = 'flex';
+  if (url.length > 6000) {
+    alert('작전 내용(특히 팀 마크 이미지)이 많아서 링크가 아주 깁니다. 카카오톡 등에서 링크가 깨질 수 있어요.');
+  }
+});
+
+document.getElementById('copyShareLinkBtn').addEventListener('click', () => {
+  shareLinkInput.select();
+  shareLinkInput.setSelectionRange(0, 999999);
+  let copied = false;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(shareLinkInput.value).then(() => {}).catch(() => {});
+    copied = true;
+  } else {
+    try { copied = document.execCommand('copy'); } catch (e) { copied = false; }
+  }
+  alert(copied ? '링크가 복사되었습니다! 카카오톡 등에 붙여넣기 하세요.' : '길게 눌러서 직접 복사해주세요.');
+});
+
+function loadStateFromShareLinkIfPresent() {
+  const m = location.hash.match(/^#s=(.+)$/);
+  if (!m) return false;
+  try {
+    state = decodeStateFromShareHash(m[1]);
+    ensureStateDefaults();
+    idCounter = Date.now();
+    history = [];
+    return true;
+  } catch (e) {
+    console.warn('공유 링크를 불러오지 못했습니다.', e);
+    return false;
+  }
+}
+
 // ---- 초기화 ----
 initState();
+loadStateFromShareLinkIfPresent();
 setFieldGeometry();
 applyZoomStyle();
 renderTeamsPanel();
