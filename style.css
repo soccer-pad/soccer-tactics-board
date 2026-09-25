@@ -15,6 +15,7 @@ body {
 
 /* ---- 화면 회전 래퍼: 세로로 들면 CSS로 강제로 가로처럼 보이게 ---- */
 .rotate-wrap {
+  position: relative;
   width: 100%;
   height: 100vh;
   height: 100dvh;
@@ -95,26 +96,33 @@ canvas#board {
   display: none;
 }
 
-/* ---- 하단 바텀시트 (탭 내용이 여기로 올라옴, 필드는 가리지 않음) ---- */
+/* ---- 하단 바텀시트 (필드 크기는 그대로 두고, 반투명하게 위에 떠서 열림) ---- */
 .bottom-sheet {
-  flex: 0 0 auto;
-  max-height: 0;
-  overflow: hidden;
-  background: #262b33;
-  transition: max-height 0.22s ease;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 54px;
+  max-height: 46vh;
+  background: rgba(20, 24, 30, 0.94);
+  transform: translateY(100%);
+  transition: transform 0.22s ease;
+  overflow-y: auto;
+  z-index: 40;
+  box-shadow: 0 -6px 20px rgba(0,0,0,0.4);
 }
 
 .bottom-sheet.open {
-  max-height: 46vh;
-  overflow-y: auto;
+  transform: translateY(0);
 }
 
 .tab-panels {
   padding: 10px 12px;
 }
 
-/* ---- 하단 아이콘 바 (항상 고정 표시) ---- */
+/* ---- 하단 아이콘 바 (항상 고정 표시, 크기 변하지 않음) ---- */
 .bottom-bar {
+  position: relative;
+  z-index: 41;
   flex: 0 0 auto;
   display: flex;
   height: 54px;
