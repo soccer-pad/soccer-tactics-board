@@ -168,6 +168,7 @@ function ensureStateDefaults() {
 
 let mode = 'move'; // 'move' | 'draw'
 let dragTarget = null;
+let dragLine = null; // { index, lastX, lastY } - 이동 모드에서 선을 잡고 옮기는 중
 let dragIsTouch = false;
 let currentDraw = null;
 let history = [];
@@ -247,11 +248,11 @@ function distToSegment(px, py, ax, ay, bx, by) {
   return Math.hypot(px - cx, py - cy);
 }
 
-function findArrowIndexAt(x, y) {
+function findArrowIndexAt(x, y, tolerance = 7) {
   for (let i = state.arrows.length - 1; i >= 0; i--) {
     const pts = state.arrows[i].points;
     for (let j = 0; j < pts.length - 1; j++) {
-      if (distToSegment(x, y, pts[j].x, pts[j].y, pts[j + 1].x, pts[j + 1].y) <= 7) return i;
+      if (distToSegment(x, y, pts[j].x, pts[j].y, pts[j + 1].x, pts[j + 1].y) <= tolerance) return i;
     }
   }
   return -1;
@@ -529,9 +530,17 @@ function drawZones() {
   ctx.restore();
 }
 
-function drawLine(arrow) {
+function drawLine(arrow, highlighted) {
   const pts = arrow.points;
   if (pts.length < 2) return;
+  if (highlighted) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,255,255,0.95)';
+    ctx.shadowBlur = 12;
+    drawLine(arrow, false);
+    ctx.restore();
+    return;
+  }
   ctx.strokeStyle = arrow.color;
   ctx.fillStyle = arrow.color;
   ctx.lineWidth = 3;
@@ -880,7 +889,7 @@ function render() {
   drawField();
   drawGrid();
   drawZones();
-  state.arrows.forEach(a => drawLine(a));
+  state.arrows.forEach((a, i) => drawLine(a, dragLine && dragLine.index === i));
   if (currentDraw) drawLine(currentDraw);
   state.equipment.forEach(e => drawEquipmentItem(e));
   if (selectedEquipId) {
@@ -895,29 +904,41 @@ function render() {
 }
 
 // ---- 좌표 변환 ----
-// 일부 모바일 브라우저는 확대(핀치줌) 상태이거나 주소창이 나타났다 사라지는 동안
-// visualViewport와 layout viewport가 어긋나서 getBoundingClientRect 기준 좌표가
-// 살짝(때로는 방향까지) 틀어질 수 있다. visualViewport 기준으로 보정한다.
-function correctForVisualViewport(clientX, clientY) {
-  const vv = window.visualViewport;
-  if (!vv) return { clientX, clientY };
-  return { clientX: clientX + vv.offsetLeft, clientY: clientY + vv.offsetTop };
+// 휴대폰을 세로로 든 상태에서는 화면 전체(.rotate-wrap)를 CSS로 90도 돌려서 가로처럼 보여준다.
+// 이때 터치 좌표(clientX/Y)는 '돌아가기 전' 화면 기준이라 x/y가 뒤바뀌어 들어오므로
+// 캔버스 좌표로 바꿀 때 회전을 되돌려서 계산해야 한다. (CSS의 media query와 같은 조건)
+const rotatedMQ = window.matchMedia('(orientation: portrait) and (pointer: coarse)');
+function isRotated() { return rotatedMQ.matches; }
+
+// rotate(90deg) translateY(-100%) 기준: 화면 (sx, sy) -> 회전 전 로컬 (sy, 폭 - sx)
+function clientToCanvas(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  if (isRotated()) {
+    return {
+      x: (clientY - rect.top) / rect.height * W,
+      y: (rect.right - clientX) / rect.width * H,
+    };
+  }
+  return {
+    x: (clientX - rect.left) / rect.width * W,
+    y: (clientY - rect.top) / rect.height * H,
+  };
+}
+
+// 화면에서 손가락이 움직인 양(dx, dy)을 회전 전 방향 기준으로 바꾼다 (스크롤/이미지 자르기용)
+function screenDeltaToLocal(dx, dy) {
+  return isRotated() ? { dx: dy, dy: -dx } : { dx, dy };
 }
 
 function getPos(evt) {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = W / rect.width;
-  const scaleY = H / rect.height;
-  const rawX = evt.touches ? evt.touches[0].clientX : evt.clientX;
-  const rawY = evt.touches ? evt.touches[0].clientY : evt.clientY;
-  const { clientX, clientY } = correctForVisualViewport(rawX, rawY);
-  return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+  const { clientX, clientY } = getClientXY(evt);
+  return clientToCanvas(clientX, clientY);
 }
 
 function getClientXY(evt) {
   const t = evt.touches && evt.touches[0] ? evt.touches[0]
     : (evt.changedTouches && evt.changedTouches[0] ? evt.changedTouches[0] : evt);
-  return correctForVisualViewport(t.clientX, t.clientY);
+  return { clientX: t.clientX, clientY: t.clientY };
 }
 
 function clamp(v, min, max) {
@@ -991,7 +1012,6 @@ topFormationSelect.addEventListener('change', () => {
 document.getElementById('railClearBtn').addEventListener('click', () => {
   if (state.arrows.length === 0) return;
   if (!confirm('필드에 그린 선을 모두 지울까요? (실행취소로 되돌릴 수 있어요)')) return;
-  pushHistory();
   state.arrows = [];
   render();
 });
@@ -1047,9 +1067,8 @@ function deleteAt(x, y, tolerance = 4) {
     render();
     return true;
   }
-  const ai = findArrowIndexAt(x, y);
+  const ai = findArrowIndexAt(x, y, tolerance + 6);
   if (ai >= 0) {
-    pushHistory();
     state.arrows.splice(ai, 1);
     render();
     return true;
@@ -1095,7 +1114,14 @@ function onDown(evt) {
     }
     updateEquipControlsVisibility();
 
-    if (dragTarget) {
+    // 선수/용품/텍스트가 없으면 선을 잡아서 통째로 옮길 수 있다
+    dragLine = null;
+    if (!dragTarget) {
+      const ai = findArrowIndexAt(x, y, dragIsTouch ? 16 : 8);
+      if (ai >= 0) dragLine = { index: ai, lastX: x, lastY: y };
+    }
+
+    if (dragTarget || dragLine) {
       trashZone.classList.add('active');
     }
 
@@ -1108,8 +1134,11 @@ function onDown(evt) {
         const deleted = deleteAt(longPressStart.x, longPressStart.y, TOUCH_HIT_TOLERANCE);
         if (deleted) {
           dragTarget = null;
+          dragLine = null;
           isPointerDown = false;
           trashZone.classList.remove('active', 'hover');
+          render();
+          checkpoint();
         }
         longPressStart = null;
       }, 550);
@@ -1148,6 +1177,17 @@ function onMove(evt) {
     dragTarget.ref.x = snapped.x;
     dragTarget.ref.y = snapped.y;
     render();
+  } else if (mode === 'move' && dragLine) {
+    const { clientX, clientY } = getClientXY(evt);
+    trashZone.classList.toggle('hover', isOverTrash(clientX, clientY));
+    const arrow = state.arrows[dragLine.index];
+    if (arrow) {
+      const dx = x - dragLine.lastX, dy = y - dragLine.lastY;
+      arrow.points.forEach(p => { p.x += dx; p.y += dy; });
+      dragLine.lastX = x;
+      dragLine.lastY = y;
+      render();
+    }
   } else if (mode === 'draw' && currentDraw) {
     if (currentDraw.type === 'freehand' || currentDraw.type === 'freehand-dashed') {
       const last = currentDraw.points[currentDraw.points.length - 1];
@@ -1164,12 +1204,14 @@ function onUp(evt) {
   isPointerDown = false;
   cancelLongPress();
 
-  if (mode === 'move' && dragTarget) {
+  if (mode === 'move' && (dragTarget || dragLine)) {
     const { clientX, clientY } = getClientXY(evt);
     if (isOverTrash(clientX, clientY)) {
-      deleteTarget(dragTarget);
+      if (dragTarget) deleteTarget(dragTarget);
+      else state.arrows.splice(dragLine.index, 1);
     }
   }
+  dragLine = null;
   trashZone.classList.remove('active', 'hover');
 
   if (mode === 'draw' && currentDraw) {
@@ -1181,13 +1223,13 @@ function onUp(evt) {
       valid = Math.hypot(p2.x - p1.x, p2.y - p1.y) > 10;
     }
     if (valid) {
-      pushHistory();
       state.arrows.push(currentDraw);
     }
     currentDraw = null;
   }
   dragTarget = null;
   render();
+  checkpoint();
 }
 
 // ---- 확대/축소 (버튼 + 핀치 줌) ----
@@ -1232,6 +1274,7 @@ function handleTouchStart(evt) {
     evt.preventDefault();
     isPointerDown = false;
     dragTarget = null;
+    dragLine = null;
     currentDraw = null;
     cancelLongPress();
     trashZone.classList.remove('active', 'hover');
@@ -1253,8 +1296,9 @@ function handleTouchMove(evt) {
     const dist = touchDist(evt.touches[0], evt.touches[1]);
     setZoom(pinchState.startZoom * (dist / pinchState.startDist));
     const mid = touchMid(evt.touches[0], evt.touches[1]);
-    boardWrap.scrollLeft = pinchState.startScrollLeft - (mid.x - pinchState.startMid.x);
-    boardWrap.scrollTop = pinchState.startScrollTop - (mid.y - pinchState.startMid.y);
+    const d = screenDeltaToLocal(mid.x - pinchState.startMid.x, mid.y - pinchState.startMid.y);
+    boardWrap.scrollLeft = pinchState.startScrollLeft - d.dx;
+    boardWrap.scrollTop = pinchState.startScrollTop - d.dy;
     return;
   }
   onMove(evt);
@@ -1277,6 +1321,7 @@ canvas.addEventListener('dblclick', (evt) => {
   if (mode !== 'move') return;
   const { x, y } = getPos(evt);
   deleteAt(x, y);
+  checkpoint();
 });
 
 // ---- 아이템 배치 공통 로직 (데스크톱 드래그 앤 드롭 + 모바일 터치 드래그 공용) ----
@@ -1296,6 +1341,7 @@ function placeItemAt(data, x, y) {
     state.equipment.push(item);
   }
   render();
+  checkpoint();
 }
 
 // ---- 팔레트 -> 필드 드래그 앤 드롭 (데스크톱, 마우스) ----
@@ -1332,11 +1378,9 @@ function startTouchDrag(payload, label, touch) {
 function endTouchDrag(touch) {
   if (!touchDragData) return;
   const rect = canvas.getBoundingClientRect();
-  const { clientX, clientY } = correctForVisualViewport(touch.clientX, touch.clientY);
+  const { clientX, clientY } = touch;
   if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
-    const scaleX = W / rect.width, scaleY = H / rect.height;
-    const x = (clientX - rect.left) * scaleX;
-    const y = (clientY - rect.top) * scaleY;
+    const { x, y } = clientToCanvas(clientX, clientY);
     placeItemAt(touchDragData, x, y);
   }
   if (ghostEl) { ghostEl.remove(); ghostEl = null; }
@@ -1358,33 +1402,83 @@ document.addEventListener('touchcancel', () => {
   touchDragData = null;
 });
 
-// ---- 되돌리기 / 다시실행 ----
+// ---- 되돌리기 / 다시실행 (작전판 전체 상태 기준) ----
+// 사용자 동작이 한 번 끝날 때마다(클릭, 값 변경, 드래그 종료 등) checkpoint()가 불리고,
+// 직전에 저장해둔 상태와 달라졌으면 그 직전 상태를 history에 쌓는다.
+const HISTORY_LIMIT = 60;
 let redoStack = [];
+let lastCommitted = null;
 
-function pushHistory() {
-  history.push(JSON.parse(JSON.stringify(state.arrows)));
-  if (history.length > 50) history.shift();
+function snapshotState() {
+  return JSON.stringify(state);
+}
+
+function checkpoint() {
+  const now = snapshotState();
+  if (lastCommitted === null || now === lastCommitted) {
+    lastCommitted = now;
+    return;
+  }
+  history.push(lastCommitted);
+  if (history.length > HISTORY_LIMIT) history.shift();
   redoStack = [];
+  lastCommitted = now;
+  updateUndoButtons();
+}
+
+function resetHistory() {
+  history = [];
+  redoStack = [];
+  lastCommitted = snapshotState();
+  updateUndoButtons();
+}
+
+function restoreSnapshot(snap) {
+  const prevMode = state.pitchMode;
+  state = JSON.parse(snap);
+  ensureStateDefaults();
+  if (state.pitchMode !== prevMode) {
+    setFieldGeometry();
+    setZoom(1);
+  }
+  if (selectedEquipId && !state.equipment.some(e => e.id === selectedEquipId)) selectedEquipId = null;
+  idCounter = Math.max(idCounter, Date.now());
+  dragTarget = null;
+  dragLine = null;
+  currentDraw = null;
+  renderTeamsPanel();
+  renderTextList();
+  syncZoneSelects();
+  updateEquipControlsVisibility();
+  render();
 }
 
 function undo() {
-  if (history.length === 0 && state.arrows.length === 0) return;
-  redoStack.push(JSON.parse(JSON.stringify(state.arrows)));
-  if (redoStack.length > 50) redoStack.shift();
-  if (history.length === 0) {
-    state.arrows.pop();
-  } else {
-    state.arrows = history.pop();
-  }
-  render();
+  checkpoint();
+  if (history.length === 0) return;
+  redoStack.push(lastCommitted);
+  restoreSnapshot(history.pop());
+  lastCommitted = snapshotState();
+  updateUndoButtons();
 }
 
 function redo() {
+  checkpoint();
   if (redoStack.length === 0) return;
-  history.push(JSON.parse(JSON.stringify(state.arrows)));
-  state.arrows = redoStack.pop();
-  render();
+  history.push(lastCommitted);
+  restoreSnapshot(redoStack.pop());
+  lastCommitted = snapshotState();
+  updateUndoButtons();
 }
+
+function updateUndoButtons() {
+  document.getElementById('undoTopBtn').disabled = history.length === 0;
+  document.getElementById('redoTopBtn').disabled = redoStack.length === 0;
+}
+
+// 패널/버튼 조작이 끝난 뒤(각 버튼의 처리 다음에) 한 번씩 변경 여부를 기록한다.
+document.addEventListener('click', () => checkpoint());
+document.addEventListener('change', () => checkpoint());
 
 // ---- 팀 패널 ----
 const teamsPanel = document.getElementById('teamsPanel');
@@ -1472,7 +1566,7 @@ function renderTeamsPanel() {
     return `<div class="player-chip" data-player="${p.id}">
       <span class="player-badge" style="background:${team.color};color:${textColor}">${escapeHtml(p.num)}</span>
       <input type="text" class="player-label-input" value="${escapeHtml(p.num)}" maxlength="3" aria-label="등번호 또는 이름" />
-      <div class="vest-swatch-row">${vestSwatches}</div>
+      <div class="vest-swatch-row"><span class="vest-label">조끼</span>${vestSwatches}</div>
       <div class="size-stepper">
         <button data-action="playerSmaller" title="작게">−</button>
         <button data-action="playerBigger" title="크게">+</button>
@@ -1618,8 +1712,11 @@ function cropDragMove(evt) {
   if (!cropDrag || !cropperState) return;
   evt.preventDefault();
   const { clientX, clientY } = getClientXY(evt);
-  cropperState.panX = cropDrag.panX + (clientX - cropDrag.x);
-  cropperState.panY = cropDrag.panY + (clientY - cropDrag.y);
+  const d = screenDeltaToLocal(clientX - cropDrag.x, clientY - cropDrag.y);
+  const cropRect = cropCanvas.getBoundingClientRect();
+  const cssToCanvas = cropCanvas.width / (isRotated() ? cropRect.height : cropRect.width);
+  cropperState.panX = cropDrag.panX + d.dx * cssToCanvas;
+  cropperState.panY = cropDrag.panY + d.dy * cssToCanvas;
   drawCropPreview();
 }
 
@@ -2094,7 +2191,6 @@ document.getElementById('undoBtn').addEventListener('click', undo);
 
 document.getElementById('clearArrowsBtn').addEventListener('click', () => {
   if (state.arrows.length === 0) return;
-  pushHistory();
   state.arrows = [];
   render();
 });
@@ -2106,7 +2202,7 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   setZoom(1);
   boardWrap.scrollLeft = 0;
   boardWrap.scrollTop = 0;
-  history = [];
+  idCounter = Date.now();
   selectedEquipId = null;
   renderTeamsPanel();
   syncZoneSelects();
@@ -2184,7 +2280,6 @@ savesList.addEventListener('click', (e) => {
     boardWrap.scrollTop = 0;
     idCounter = Date.now();
     cascadeCounter = 0;
-    history = [];
     selectedEquipId = null;
     renderTeamsPanel();
     syncZoneSelects();
@@ -2244,7 +2339,6 @@ function loadStateFromShareLinkIfPresent() {
     state = decodeStateFromShareHash(m[1]);
     ensureStateDefaults();
     idCounter = Date.now();
-    history = [];
     return true;
   } catch (e) {
     console.warn('공유 링크를 불러오지 못했습니다.', e);
@@ -2265,3 +2359,4 @@ syncZoneSelects();
 renderTextList();
 renderSavesPanel();
 render();
+resetHistory();
