@@ -870,19 +870,29 @@ function render() {
 }
 
 // ---- 좌표 변환 ----
+// 일부 모바일 브라우저는 확대(핀치줌) 상태이거나 주소창이 나타났다 사라지는 동안
+// visualViewport와 layout viewport가 어긋나서 getBoundingClientRect 기준 좌표가
+// 살짝(때로는 방향까지) 틀어질 수 있다. visualViewport 기준으로 보정한다.
+function correctForVisualViewport(clientX, clientY) {
+  const vv = window.visualViewport;
+  if (!vv) return { clientX, clientY };
+  return { clientX: clientX + vv.offsetLeft, clientY: clientY + vv.offsetTop };
+}
+
 function getPos(evt) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = W / rect.width;
   const scaleY = H / rect.height;
-  const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
-  const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+  const rawX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+  const rawY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+  const { clientX, clientY } = correctForVisualViewport(rawX, rawY);
   return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
 }
 
 function getClientXY(evt) {
   const t = evt.touches && evt.touches[0] ? evt.touches[0]
     : (evt.changedTouches && evt.changedTouches[0] ? evt.changedTouches[0] : evt);
-  return { clientX: t.clientX, clientY: t.clientY };
+  return correctForVisualViewport(t.clientX, t.clientY);
 }
 
 function clamp(v, min, max) {
@@ -1246,10 +1256,11 @@ function startTouchDrag(payload, label, touch) {
 function endTouchDrag(touch) {
   if (!touchDragData) return;
   const rect = canvas.getBoundingClientRect();
-  if (touch.clientX >= rect.left && touch.clientX <= rect.right && touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+  const { clientX, clientY } = correctForVisualViewport(touch.clientX, touch.clientY);
+  if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
     const scaleX = W / rect.width, scaleY = H / rect.height;
-    const x = (touch.clientX - rect.left) * scaleX;
-    const y = (touch.clientY - rect.top) * scaleY;
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
     placeItemAt(touchDragData, x, y);
   }
   if (ghostEl) { ghostEl.remove(); ghostEl = null; }
@@ -1900,29 +1911,15 @@ textList.addEventListener('click', (e) => {
 });
 
 // ---- 하단 도구 ----
-const modeBtn = document.getElementById('modeBtn');
-const modeBtn2 = document.getElementById('modeBtn2');
-const modeButtons = [modeBtn, modeBtn2];
 const hint = document.getElementById('hint');
 
 function refreshModeButtons() {
-  modeButtons.forEach(b => {
-    b.textContent = mode === 'move' ? '이동 모드' : '그리기 모드';
-    b.className = 'mode-toggle-btn ' + (mode === 'move' ? 'mode-move' : 'mode-draw');
-  });
   document.getElementById('railMoveBtn').classList.toggle('active', mode === 'move');
   document.getElementById('railDrawBtn').classList.toggle('active', mode === 'draw');
   hint.textContent = mode === 'move'
     ? '이동 모드: 드래그해서 옮기세요. 더블클릭(또는 길게 누르기)하거나 삭제 영역으로 끌면 삭제됩니다. 확대 중엔 손가락 두 개로 오므리거나 벌려서 확대/이동하세요.'
     : '그리기 모드: 드래그해서 선을 그리세요. 이동 모드에서 선을 더블클릭하면 삭제됩니다.';
 }
-
-function toggleMode() {
-  mode = mode === 'move' ? 'draw' : 'move';
-  refreshModeButtons();
-}
-
-modeButtons.forEach(b => b.addEventListener('click', toggleMode));
 
 document.getElementById('undoBtn').addEventListener('click', undo);
 
