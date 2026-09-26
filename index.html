@@ -8,196 +8,316 @@
 </head>
 <body>
   <div class="rotate-wrap" id="rotateWrap">
+    <!-- 잔디 배경 + 필드 -->
+    <div class="stage">
+      <div class="board-wrap" id="boardWrap">
+        <canvas id="board" width="940" height="644"></canvas>
+      </div>
+      <div class="stage-vignette"></div>
+    </div>
+
+    <!-- 상단 바 -->
     <header class="top-bar">
       <div class="top-bar-left">
-        <span class="app-title">⚽ 전자 축구작전판</span>
+        <span class="brand-mark">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5l3.2 2.3-1.2 3.8h-4l-1.2-3.8z"/><path d="M12 3v4.5M20.3 9.2l-5.1.6M16.8 19.6l-2.8-6M7.2 19.6l2.8-6M3.7 9.2l5.1.6"/></svg>
+        </span>
+        <span class="app-title">전자 축구작전판</span>
       </div>
-      <div class="top-bar-right">
-        <button id="undoTopBtn" class="icon-btn" aria-label="실행취소" title="실행취소">↶</button>
-        <button id="redoTopBtn" class="icon-btn" aria-label="다시실행" title="다시실행">↷</button>
+
+      <div class="top-bar-center">
+        <label class="formation-pill" title="첫 번째(선택된) 팀에 포메이션 적용">
+          <select id="topFormationSelect" aria-label="포메이션"></select>
+          <svg class="pill-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </label>
         <span class="top-bar-sep"></span>
-        <button id="shareTopBtn" class="icon-btn" aria-label="공유" title="공유">🔗</button>
-        <button id="saveTopBtn" class="icon-btn" aria-label="저장" title="저장">💾</button>
-        <button id="settingsTopBtn" class="icon-btn" aria-label="설정" title="설정">⚙️</button>
+        <div class="match-badges" id="matchBadges"></div>
+      </div>
+
+      <div class="top-bar-right">
+        <button id="undoTopBtn" class="icon-btn" aria-label="실행취소" title="실행취소">
+          <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg>
+        </button>
+        <button id="redoTopBtn" class="icon-btn" aria-label="다시실행" title="다시실행">
+          <svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg>
+        </button>
+        <span class="top-bar-sep"></span>
+        <button id="saveTopBtn" class="icon-btn" aria-label="저장" title="저장">
+          <svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/><path d="M7 3v5h8V3"/><rect x="7" y="13" width="10" height="6" rx="1"/></svg>
+        </button>
+        <button id="shareTopBtn" class="icon-btn" aria-label="공유" title="공유">
+          <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>
+        </button>
+        <button id="settingsTopBtn" class="icon-btn" aria-label="설정" title="설정">
+          <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3" class="fill"/><circle cx="12" cy="12" r="1.3" class="fill"/><circle cx="19" cy="12" r="1.3" class="fill"/></svg>
+        </button>
       </div>
     </header>
 
-    <div class="app-shell">
-      <nav class="side-rail" id="sideRail">
-        <button class="rail-btn active" data-tab="team"><span class="rail-icon">👥</span><span class="rail-label">선수</span></button>
-        <button class="rail-btn" data-tab="equip"><span class="rail-icon">🧰</span><span class="rail-label">용품</span></button>
-        <div class="rail-sep"></div>
-        <button class="rail-btn" id="railMoveBtn"><span class="rail-icon">✛</span><span class="rail-label">이동</span></button>
-        <button class="rail-btn" id="railDrawBtn"><span class="rail-icon">✏️</span><span class="rail-label">그리기</span></button>
-        <div class="rail-sep"></div>
-        <button class="rail-btn" data-tab="line"><span class="rail-icon">➰</span><span class="rail-label">선</span></button>
-        <button class="rail-btn" data-tab="text"><span class="rail-icon">📝</span><span class="rail-label">설명</span></button>
-      </nav>
+    <!-- 왼쪽 도구 레일 -->
+    <nav class="side-rail" id="sideRail">
+      <button class="rail-btn" data-tab="team" title="선수">
+        <svg viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M19 8v6M16 11h6"/></svg>
+        <span class="rail-label">선수</span>
+      </button>
+      <button class="rail-btn" data-tab="equip" title="용품">
+        <svg viewBox="0 0 24 24"><path d="M12 3l6 16H6z"/><path d="M8.2 13h7.6"/><path d="M4 20h16"/></svg>
+        <span class="rail-label">용품</span>
+      </button>
+      <div class="rail-sep"></div>
+      <button class="rail-btn mode-btn" id="railMoveBtn" title="이동">
+        <svg viewBox="0 0 24 24"><path d="M5 3l14 7-6 1.8L10.5 18z"/></svg>
+        <span class="rail-label">이동</span>
+      </button>
+      <button class="rail-btn mode-btn" id="railDrawBtn" title="그리기">
+        <svg viewBox="0 0 24 24"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/><path d="M14.5 6.5l3 3"/></svg>
+        <span class="rail-label">그리기</span>
+      </button>
+      <div class="rail-sep"></div>
+      <button class="rail-btn" data-tab="line" title="선 스타일">
+        <svg viewBox="0 0 24 24"><circle cx="5.5" cy="18.5" r="2"/><path d="M7 17L18 6"/><path d="M12 6h6v6"/></svg>
+        <span class="rail-label">선</span>
+      </button>
+      <button class="rail-btn" data-tab="text" title="텍스트">
+        <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2"/><path d="M12 4v16"/><path d="M9 20h6"/></svg>
+        <span class="rail-label">텍스트</span>
+      </button>
+      <button class="rail-btn" id="railClearBtn" title="선 모두 지우기">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>
+        <span class="rail-label">지우기</span>
+      </button>
+    </nav>
 
-      <div class="stage">
-        <div class="board-wrap" id="boardWrap">
-          <canvas id="board" width="940" height="644"></canvas>
-        </div>
-
-        <div class="float-zoom">
-          <button id="zoomInBtn" class="float-btn" aria-label="확대">+</button>
-          <span id="zoomLabel" class="float-zoom-label">100%</span>
-          <button id="zoomOutBtn" class="float-btn" aria-label="축소">−</button>
-          <button id="zoomResetBtn" class="float-btn float-btn-reset" aria-label="원본 크기" title="원본 크기">⤢</button>
-        </div>
-
-        <p class="hint" id="hint">이동 모드: 드래그해서 옮기세요. 더블클릭(또는 길게 누르기)하거나 삭제 영역으로 끌면 삭제됩니다. 확대 중엔 손가락 두 개로 오므리거나 벌려서 확대/이동하세요.</p>
+    <!-- 오른쪽 떠 있는 컨트롤 -->
+    <div class="float-controls">
+      <div class="float-group">
+        <button id="zoomInBtn" class="float-btn" aria-label="확대" title="확대">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button id="zoomOutBtn" class="float-btn" aria-label="축소" title="축소">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+        </button>
+        <button id="zoomResetBtn" class="float-btn" aria-label="원래 크기" title="원래 크기로">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.6" class="fill"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+        </button>
+        <span id="zoomLabel" class="float-zoom-label">100%</span>
       </div>
-
-      <div id="trashZone" class="trash-zone">🗑️ 여기로 끌어서 삭제</div>
+      <div class="float-group">
+        <button id="courtToggleBtn" class="float-btn" aria-label="풀코트/하프코트 전환" title="풀코트 / 하프코트">
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M12 5v14"/><circle cx="12" cy="12" r="2.6"/><path d="M3 9.5h2.5v5H3M21 9.5h-2.5v5H21"/></svg>
+          <span class="float-btn-label" id="courtToggleLabel">풀</span>
+        </button>
+        <button id="gridQuickBtn" class="float-btn" aria-label="격자" title="격자 표시">
+          <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/></svg>
+          <span class="float-btn-label">격자</span>
+        </button>
+      </div>
     </div>
 
-    <div class="bottom-sheet" id="bottomSheet">
-      <div class="tab-panels">
-        <!-- 팀 -->
-        <section class="tab-panel active" data-panel="team">
-          <div class="panel-head">
-            <span>팀</span>
-            <button id="addTeamBtn" class="small-btn accent">+ 팀 추가</button>
-          </div>
-          <div id="teamsPanel" class="teams-panel"></div>
-          <div class="total-count">총 선수: <span id="totalCount">0</span> / 40</div>
-        </section>
+    <p class="hint" id="hint"></p>
+    <div id="trashZone" class="trash-zone">여기로 끌어서 삭제</div>
 
-        <!-- 용품 -->
-        <section class="tab-panel" data-panel="equip">
-          <div class="panel-head"><span>훈련 용품 (드래그하거나 "+추가")</span></div>
-          <div id="equipControls" class="goal-controls" style="display:none">
-            <div class="equip-title" id="equipControlsTitle">선택된 용품 — 크기</div>
-            <div class="row-actions wrap">
-              <button id="equipSmaller" class="small-btn">− 크기</button>
-              <button id="equipBigger" class="small-btn">+ 크기</button>
-              <button id="equipDeselect" class="small-btn">선택 해제</button>
+    <!-- 하단 시트 -->
+    <div class="bottom-sheet" id="bottomSheet">
+      <button class="sheet-grabber" id="sheetGrabber" aria-label="패널 닫기"><span></span></button>
+      <div class="sheet-body">
+        <nav class="sheet-nav">
+          <button class="sheet-nav-btn" data-tab="team">
+            <svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/></svg><span>팀</span>
+          </button>
+          <button class="sheet-nav-btn" data-tab="equip">
+            <svg viewBox="0 0 24 24"><path d="M12 3l6 16H6z"/><path d="M8.2 13h7.6"/></svg><span>용품</span>
+          </button>
+          <button class="sheet-nav-btn" data-tab="line">
+            <svg viewBox="0 0 24 24"><circle cx="5.5" cy="18.5" r="2"/><path d="M7 17L18 6"/><path d="M12 6h6v6"/></svg><span>선</span>
+          </button>
+          <button class="sheet-nav-btn" data-tab="text">
+            <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2"/><path d="M12 4v16"/><path d="M9 20h6"/></svg><span>텍스트</span>
+          </button>
+          <button class="sheet-nav-btn" data-tab="option">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span>설정</span>
+          </button>
+          <button class="sheet-nav-btn" data-tab="save">
+            <svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/><path d="M7 3v5h8V3"/></svg><span>저장</span>
+          </button>
+        </nav>
+
+        <div class="tab-panels">
+          <!-- 팀 -->
+          <section class="tab-panel active" data-panel="team">
+            <div class="panel-head">
+              <span class="panel-title">팀</span>
+              <div class="team-tabs" id="teamTabs"></div>
+              <button id="addTeamBtn" class="pill-btn">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>팀 추가
+              </button>
             </div>
-            <div class="group" id="equipRotateGroup" style="display:none">
-              <label>방향 (<span id="equipRotateLabel">0</span>°)</label>
-              <div class="row-actions">
-                <button id="equipRotateMinus" class="small-btn">− 15°</button>
-                <input type="range" id="equipRotateSlider" min="0" max="359" value="0" />
-                <button id="equipRotatePlus" class="small-btn">+ 15°</button>
+            <div id="teamsPanel" class="teams-panel"></div>
+            <div class="total-count">전체 선수 <span id="totalCount">0</span> / 40</div>
+          </section>
+
+          <!-- 용품 -->
+          <section class="tab-panel" data-panel="equip">
+            <div class="panel-head">
+              <span class="panel-title">훈련 용품</span>
+              <span class="panel-sub">이름을 끌어서 놓거나 "+ 추가"</span>
+            </div>
+            <div id="equipControls" class="card goal-controls" style="display:none">
+              <div class="card-title" id="equipControlsTitle">선택된 용품 — 크기</div>
+              <div class="row-actions wrap">
+                <button id="equipSmaller" class="small-btn">− 작게</button>
+                <button id="equipBigger" class="small-btn">+ 크게</button>
+                <button id="equipDeselect" class="small-btn ghost">선택 해제</button>
+              </div>
+              <div class="group" id="equipRotateGroup" style="display:none">
+                <label>방향 <b><span id="equipRotateLabel">0</span>°</b></label>
+                <div class="row-actions">
+                  <button id="equipRotateMinus" class="small-btn">−15°</button>
+                  <input type="range" id="equipRotateSlider" min="0" max="359" value="0" />
+                  <button id="equipRotatePlus" class="small-btn">+15°</button>
+                </div>
               </div>
             </div>
-          </div>
-          <div id="equipmentPanel" class="equipment-panel"></div>
-        </section>
+            <div id="equipmentPanel" class="equipment-panel"></div>
+          </section>
 
-        <!-- 선 -->
-        <section class="tab-panel" data-panel="line">
-          <div class="panel-head"><span>선 그리기</span></div>
-          <div class="group">
-            <label>선 모양</label>
-            <div class="row-actions wrap" id="lineArrowPanel">
-              <button class="small-btn line-arrow-btn active" data-value="arrow">➜ 방향선 (화살표)</button>
-              <button class="small-btn line-arrow-btn" data-value="plain">─ 일반 선 (화살표 없음)</button>
+          <!-- 선 -->
+          <section class="tab-panel" data-panel="line">
+            <div class="panel-head">
+              <span class="panel-title">선 스타일</span>
+              <span class="panel-sub">왼쪽의 "그리기"를 누른 뒤 필드에 그려요</span>
             </div>
-          </div>
-          <div class="group">
-            <label>선 종류</label>
-            <div class="row-actions wrap" id="lineTypePanel">
-              <button class="small-btn line-type-btn active" data-value="solid">실선</button>
-              <button class="small-btn line-type-btn" data-value="dashed">점선</button>
-              <button class="small-btn line-type-btn" data-value="freehand">자유곡선</button>
-              <button class="small-btn line-type-btn" data-value="freehand-dashed">자유곡선(점선)</button>
+            <div class="settings-grid">
+              <div class="card">
+                <div class="card-title">선 모양</div>
+                <div class="segmented" id="lineArrowPanel">
+                  <button class="line-arrow-btn active" data-value="arrow">방향선</button>
+                  <button class="line-arrow-btn" data-value="plain">일반 선</button>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-title">선 종류</div>
+                <div class="segmented" id="lineTypePanel">
+                  <button class="line-type-btn active" data-value="solid">실선</button>
+                  <button class="line-type-btn" data-value="dashed">점선</button>
+                  <button class="line-type-btn" data-value="freehand">곡선</button>
+                  <button class="line-type-btn" data-value="freehand-dashed">곡선 점선</button>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-title">선 색상</div>
+                <div id="lineColorPanel" class="swatch-row"></div>
+              </div>
+              <div class="card">
+                <div class="card-title">편집</div>
+                <div class="row-actions wrap">
+                  <button id="undoBtn" class="small-btn">되돌리기</button>
+                  <button id="clearArrowsBtn" class="small-btn danger">선 모두 지우기</button>
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="group">
-            <label>선 색상</label>
-            <div id="lineColorPanel" class="swatch-row"></div>
-          </div>
-          <div class="row-actions wrap">
-            <button id="undoBtn" class="small-btn">되돌리기</button>
-            <button id="clearArrowsBtn" class="small-btn">선 지우기</button>
-          </div>
-        </section>
+          </section>
 
-        <!-- 설명 (텍스트) -->
-        <section class="tab-panel" data-panel="text">
-          <div class="panel-head"><span>필드에 텍스트 라벨 추가</span></div>
-          <div class="row-actions">
-            <input type="text" id="textInput" placeholder="" maxlength="20" />
-            <button id="addTextBtn" class="small-btn accent">+ 추가</button>
-          </div>
-          <div id="textList" class="text-list"></div>
-        </section>
+          <!-- 텍스트 -->
+          <section class="tab-panel" data-panel="text">
+            <div class="panel-head">
+              <span class="panel-title">텍스트</span>
+              <span class="panel-sub">필드 위에 글자를 올려요</span>
+            </div>
+            <div class="row-actions">
+              <input type="text" id="textInput" placeholder="예) 압박 시작" maxlength="20" />
+              <button id="addTextBtn" class="small-btn accent">+ 추가</button>
+            </div>
+            <div id="textList" class="text-list"></div>
+          </section>
 
-        <!-- 옵션 -->
-        <section class="tab-panel" data-panel="option">
-          <div class="panel-head"><span>표시</span></div>
-          <div class="row-actions wrap">
-            <button id="gridToggleBtn" class="small-btn">▦ 격자 표시</button>
-          </div>
+          <!-- 설정 -->
+          <section class="tab-panel" data-panel="option">
+            <div class="panel-head">
+              <span class="panel-title">설정</span>
+            </div>
+            <div class="settings-grid">
+              <div class="card">
+                <div class="card-title">필드</div>
+                <div class="group">
+                  <label>축구장 종류</label>
+                  <select id="pitchModeSelect">
+                    <option value="full">정규 축구장 (가로)</option>
+                    <option value="half">하프 코트 (세로)</option>
+                  </select>
+                </div>
+                <div class="group" id="halfGoalGroup" style="display:none">
+                  <label>골대 위치</label>
+                  <select id="halfGoalSelect">
+                    <option value="bottom">아래</option>
+                    <option value="top">위</option>
+                  </select>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-title">구역 표시</div>
+                <div class="group">
+                  <label>공격 - 미들 - 수비</label>
+                  <select id="lengthZoneSelect">
+                    <option value="0">없음</option>
+                    <option value="3">3등분</option>
+                    <option value="4">4등분</option>
+                    <option value="5">5등분</option>
+                  </select>
+                </div>
+                <div class="group">
+                  <label>왼쪽 - 중앙 - 오른쪽</label>
+                  <select id="widthZoneSelect">
+                    <option value="0">없음</option>
+                    <option value="3">3등분</option>
+                    <option value="4">4등분</option>
+                    <option value="5">5등분</option>
+                  </select>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-title">표시</div>
+                <div class="row-actions wrap">
+                  <button id="gridToggleBtn" class="small-btn">격자 표시</button>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-title">초기화</div>
+                <div class="row-actions wrap">
+                  <button id="resetBtn" class="small-btn danger">전체 초기화</button>
+                </div>
+              </div>
+            </div>
+          </section>
 
-          <div class="panel-head sub"><span>필드 모드</span></div>
-          <div class="group">
-            <label>축구장 종류</label>
-            <select id="pitchModeSelect">
-              <option value="full">정규 축구장 (가로)</option>
-              <option value="half">하프 코트 (세로)</option>
-            </select>
-          </div>
-          <div class="group" id="halfGoalGroup" style="display:none">
-            <label>골대 위치</label>
-            <select id="halfGoalSelect">
-              <option value="bottom">아래</option>
-              <option value="top">위</option>
-            </select>
-          </div>
-
-          <div class="panel-head sub"><span>구역 표시</span></div>
-          <div class="group">
-            <label>가로 구역 (공격 - 미들 - 수비)</label>
-            <select id="lengthZoneSelect">
-              <option value="0">없음</option>
-              <option value="3">3등분</option>
-              <option value="4">4등분</option>
-              <option value="5">5등분</option>
-            </select>
-          </div>
-          <div class="group">
-            <label>세로 구역 (왼쪽 - 중앙 - 오른쪽)</label>
-            <select id="widthZoneSelect">
-              <option value="0">없음</option>
-              <option value="3">3등분</option>
-              <option value="4">4등분</option>
-              <option value="5">5등분</option>
-            </select>
-          </div>
-
-          <div class="panel-head sub"><span>기타</span></div>
-          <div class="row-actions wrap">
-            <button id="resetBtn" class="small-btn">전체 초기화</button>
-          </div>
-        </section>
-
-        <!-- 저장 -->
-        <section class="tab-panel" data-panel="save">
-          <div class="panel-head"><span>작전 저장</span></div>
-          <div class="row-actions">
-            <input type="text" id="saveNameInput" placeholder="작전 이름 (예: 수비 전환)" maxlength="30" />
-            <button id="saveBoardBtn" class="small-btn accent">저장</button>
-          </div>
-          <div id="savesList" class="save-list"></div>
-
-          <div class="panel-head sub"><span>지인에게 공유하기</span></div>
-          <p class="empty-msg" style="padding:0">지금 작전판 내용 그대로 열어볼 수 있는 링크를 만들어요. 로그인 없이 링크만 보내면 상대방도 똑같이 볼 수 있어요.</p>
-          <div class="row-actions wrap">
-            <button id="makeShareLinkBtn" class="small-btn accent">공유 링크 만들기</button>
-          </div>
-          <div class="row-actions" id="shareLinkRow" style="display:none">
-            <input type="text" id="shareLinkInput" readonly />
-            <button id="copyShareLinkBtn" class="small-btn">복사</button>
-          </div>
-
-          <div class="panel-head sub"><span>기타</span></div>
-          <div class="row-actions wrap">
-            <button id="exportBtn" class="small-btn">이미지로 저장</button>
-          </div>
-        </section>
+          <!-- 저장 -->
+          <section class="tab-panel" data-panel="save">
+            <div class="panel-head">
+              <span class="panel-title">저장 · 공유</span>
+            </div>
+            <div class="settings-grid">
+              <div class="card">
+                <div class="card-title">작전 저장 <span class="card-sub">이 기기에 저장돼요</span></div>
+                <div class="row-actions">
+                  <input type="text" id="saveNameInput" placeholder="작전 이름 (예: 수비 전환)" maxlength="30" />
+                  <button id="saveBoardBtn" class="small-btn accent">저장</button>
+                </div>
+                <div id="savesList" class="save-list"></div>
+              </div>
+              <div class="card">
+                <div class="card-title">지인에게 공유 <span class="card-sub">로그인 없이 링크로</span></div>
+                <div class="row-actions wrap">
+                  <button id="makeShareLinkBtn" class="small-btn accent">공유 링크 만들기</button>
+                  <button id="exportBtn" class="small-btn">이미지로 저장</button>
+                </div>
+                <div class="row-actions" id="shareLinkRow" style="display:none">
+                  <input type="text" id="shareLinkInput" readonly />
+                  <button id="copyShareLinkBtn" class="small-btn">복사</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   </div>

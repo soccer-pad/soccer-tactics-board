@@ -267,22 +267,25 @@ function drawField() {
   else drawFullField();
 }
 
-function drawPitchBase() {
-  ctx.fillStyle = '#0e0e0e';
-  ctx.fillRect(0, 0, W, H);
+// 잔디는 CSS(.stage)가 그리고, 캔버스는 투명하게 두고 라인/선수만 그린다.
+// (이미지로 저장할 때만 paintGrass로 잔디를 따로 깔아준다)
+const GRASS_COLOR = '#2e7d32';
 
-  ctx.fillStyle = '#2e7d32';
-  ctx.fillRect(field.left, field.top, fieldW, fieldH);
-
-  ctx.fillStyle = 'rgba(255,255,255,0.035)';
-  const stripes = 14;
-  const stripeW = fieldW / stripes;
-  for (let i = 0; i < stripes; i++) {
-    if (i % 2 === 0) ctx.fillRect(field.left + i * stripeW, field.top, stripeW, fieldH);
+function paintGrass(c, w, h) {
+  c.fillStyle = GRASS_COLOR;
+  c.fillRect(0, 0, w, h);
+  const stripeW = 72;
+  for (let x = 0, i = 0; x < w; x += stripeW, i++) {
+    c.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.035)';
+    c.fillRect(x, 0, stripeW, h);
   }
+}
 
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 2;
+function drawPitchBase() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 2.2;
   ctx.strokeRect(field.left, field.top, fieldW, fieldH);
 }
 
@@ -376,20 +379,42 @@ function drawHalfField() {
   drawGoalMouthHorizontal(goalY, cx, goalIsBottom ? 1 : -1);
 }
 
+const GOAL_DEPTH = 18;
+
+function drawGoalNet(x, y, w, h) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.fillRect(x, y, w, h);
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  const step = 4;
+  for (let d = -h; d < w + h; d += step) {
+    ctx.moveTo(x + d, y);
+    ctx.lineTo(x + d + h, y + h);
+    ctx.moveTo(x + d + h, y);
+    ctx.lineTo(x + d, y + h);
+  }
+  ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(x, y, w, h);
+  ctx.restore();
+}
+
 function drawGoalMouth(lineX, cy, dir) {
-  const depth = 14;
   const half = goalWidthPx / 2;
-  ctx.strokeStyle = '#eee';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(dir > 0 ? lineX : lineX - depth, cy - half, depth, half * 2);
+  drawGoalNet(dir > 0 ? lineX : lineX - GOAL_DEPTH, cy - half, GOAL_DEPTH, half * 2);
 }
 
 function drawGoalMouthHorizontal(lineY, cx, dir) {
-  const depth = 14;
   const half = goalWidthPx / 2;
-  ctx.strokeStyle = '#eee';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(cx - half, dir > 0 ? lineY : lineY - depth, half * 2, depth);
+  drawGoalNet(cx - half, dir > 0 ? lineY : lineY - GOAL_DEPTH, half * 2, GOAL_DEPTH);
 }
 
 function drawGrid() {
@@ -903,18 +928,28 @@ function clamp(v, min, max) {
 const bottomSheet = document.getElementById('bottomSheet');
 let bottomSheetOpen = false;
 
+let currentSheetTab = null;
+
 function openSheet(name) {
-  document.querySelectorAll('.rail-btn[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  currentSheetTab = name;
+  document.querySelectorAll('.rail-btn[data-tab], .sheet-nav-btn[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
   bottomSheet.classList.add('open');
   bottomSheetOpen = true;
 }
 
 function closeSheet() {
+  currentSheetTab = null;
   document.querySelectorAll('.rail-btn[data-tab]').forEach(b => b.classList.remove('active'));
   bottomSheet.classList.remove('open');
   bottomSheetOpen = false;
 }
+
+document.querySelectorAll('.sheet-nav-btn[data-tab]').forEach(btn => {
+  btn.addEventListener('click', () => openSheet(btn.dataset.tab));
+});
+
+document.getElementById('sheetGrabber').addEventListener('click', closeSheet);
 
 // 다른 곳에서 특정 탭을 열어야 할 때 쓰는 함수 (예: 저장 불러오기 후 팀 탭 유지 등)
 function switchTab(name) {
@@ -939,6 +974,47 @@ document.getElementById('settingsTopBtn').addEventListener('click', () => openSh
 document.getElementById('shareTopBtn').addEventListener('click', () => {
   openSheet('save');
   document.getElementById('makeShareLinkBtn').click();
+});
+
+// 상단 포메이션 알약: 선택된 팀(없으면 새 팀)에 바로 배치
+const topFormationSelect = document.getElementById('topFormationSelect');
+topFormationSelect.innerHTML = '<option value="" disabled selected hidden>포메이션</option>' +
+  FORMATION_KEYS.map(k => `<option value="${k}">${FORMATION_LABELS[k]}</option>`).join('');
+topFormationSelect.addEventListener('change', () => {
+  const key = topFormationSelect.value;
+  if (!key) return;
+  if (state.teams.length === 0) addTeam();
+  const team = findTeam(selectedTeamId) || state.teams[0];
+  applyFormationToTeam(team.id, key);
+});
+
+document.getElementById('railClearBtn').addEventListener('click', () => {
+  if (state.arrows.length === 0) return;
+  if (!confirm('필드에 그린 선을 모두 지울까요? (실행취소로 되돌릴 수 있어요)')) return;
+  pushHistory();
+  state.arrows = [];
+  render();
+});
+
+// ---- 오른쪽 떠 있는 버튼: 풀코트/하프코트, 격자 ----
+const courtToggleBtn = document.getElementById('courtToggleBtn');
+const courtToggleLabel = document.getElementById('courtToggleLabel');
+const gridQuickBtn = document.getElementById('gridQuickBtn');
+
+function syncQuickButtons() {
+  courtToggleLabel.textContent = state.pitchMode === 'half' ? '하프' : '풀';
+  courtToggleBtn.classList.toggle('active', state.pitchMode === 'half');
+  gridQuickBtn.classList.toggle('active', !!state.showGrid);
+}
+
+courtToggleBtn.addEventListener('click', () => {
+  changePitchMode(state.pitchMode === 'half' ? 'full' : 'half', state.halfGoalPos);
+  syncPitchModeUI();
+  syncQuickButtons();
+});
+
+gridQuickBtn.addEventListener('click', () => {
+  document.getElementById('gridToggleBtn').click();
 });
 
 // ---- 왼쪽 레일의 이동/그리기 모드 바로가기 ----
@@ -1321,58 +1397,139 @@ const VEST_UI_COLORS = [
   { key: 'blue', css: '#1e88e5' },
 ];
 
+const teamTabsEl = document.getElementById('teamTabs');
+const matchBadgesEl = document.getElementById('matchBadges');
+let selectedTeamId = null;
+
+function teamName(index) {
+  if (index === 0) return '우리팀';
+  if (index === 1) return '상대팀';
+  return '팀' + (index + 1);
+}
+
+function readableTextOn(hex) {
+  return colorLuminance(hex) > 0.62 ? '#111' : '#fff';
+}
+
+const SHIELD_PATH = 'M17 2.5l12.5 4.2v9.6c0 8.4-5.4 14.4-12.5 18.2C9.9 30.7 4.5 24.7 4.5 16.3V6.7z';
+
+function badgeHtml(team, index) {
+  if (!team) {
+    return `<button class="team-badge ghost" data-badge="add" title="팀 추가">
+      <svg viewBox="0 0 34 38"><path d="${SHIELD_PATH}"/></svg>
+    </button>`;
+  }
+  if (team.crest) {
+    return `<button class="team-badge" data-badge="${team.id}" title="${teamName(index)}">
+      <span class="crest-img" style="background-image:url('${team.crest}')"></span>
+    </button>`;
+  }
+  return `<button class="team-badge" data-badge="${team.id}" title="${teamName(index)}">
+    <svg viewBox="0 0 34 38"><path d="${SHIELD_PATH}" fill="${team.color}" stroke="rgba(255,255,255,0.85)" stroke-width="1.6"/>
+    <path d="M17 9v18M10 14h14" stroke="${readableTextOn(team.color)}" stroke-opacity="0.35" stroke-width="1.6" stroke-linecap="round"/></svg>
+  </button>`;
+}
+
+function renderMatchBadges() {
+  const [a, b] = state.teams;
+  matchBadgesEl.innerHTML = `${badgeHtml(a, 0)}<span class="match-vs">VS</span>${badgeHtml(b, 1)}`;
+}
+
+function renderTeamTabs() {
+  teamTabsEl.innerHTML = state.teams.map((team, i) => {
+    const dotStyle = team.crest ? `background-image:url('${team.crest}')` : `background:${team.color}`;
+    return `<button class="team-tab${team.id === selectedTeamId ? ' active' : ''}" data-team-tab="${team.id}">
+      <span class="team-dot" style="${dotStyle}"></span>${teamName(i)}<span class="team-tab-count">${team.players.length}</span>
+    </button>`;
+  }).join('');
+  teamTabsEl.style.display = state.teams.length ? 'flex' : 'none';
+}
+
 function renderTeamsPanel() {
-  if (state.teams.length === 0) {
-    teamsPanel.innerHTML = '<p class="empty-msg">아직 팀이 없습니다. 위의 "+ 팀 추가"를 눌러 팀을 만들어보세요.</p>';
-    totalCountEl.textContent = 0;
+  if (!findTeam(selectedTeamId)) selectedTeamId = state.teams.length ? state.teams[0].id : null;
+  renderTeamTabs();
+  renderMatchBadges();
+  totalCountEl.textContent = totalPlayers();
+
+  const index = state.teams.findIndex(t => t.id === selectedTeamId);
+  const team = state.teams[index];
+  if (!team) {
+    topFormationSelect.value = '';
+    teamsPanel.innerHTML = `<div class="card"><p class="empty-msg">아직 팀이 없어요. 오른쪽 위 "팀 추가"를 누르거나, 상단의 포메이션을 고르면 바로 선수가 배치돼요.</p></div>`;
     return;
   }
-  teamsPanel.innerHTML = state.teams.map((team, i) => {
-    const swatches = TEAM_PALETTE.map(c =>
-      `<button class="swatch${c === team.color ? ' selected' : ''}" style="background:${c}" data-color="${c}"></button>`
-    ).join('');
-    const formOptions = FORMATION_KEYS.map(k => `<option value="${k}">${FORMATION_LABELS[k]}</option>`).join('');
-    const playerChips = team.players.map(p => {
-      const vestSwatches = `<button class="vest-swatch none-swatch${!p.vest ? ' selected' : ''}" data-vest="" title="조끼 없음">–</button>` +
-        VEST_UI_COLORS.map(v => `<button class="vest-swatch${p.vest === v.key ? ' selected' : ''}" style="background:${v.css}" data-vest="${v.key}" title="${v.key} 조끼"></button>`).join('');
-      return `<div class="player-chip" data-player="${p.id}">
-        <input type="text" class="player-label-input" value="${escapeHtml(p.num)}" maxlength="3" />
-        <button class="small-btn player-size-btn" data-action="playerSmaller" title="작게">−</button>
-        <button class="small-btn player-size-btn" data-action="playerBigger" title="크게">+</button>
-        <div class="vest-swatch-row">${vestSwatches}</div>
-        <button class="small-btn player-del-btn" data-action="delPlayer" title="이 선수 삭제">✕</button>
-      </div>`;
-    }).join('');
 
-    return `<div class="team-row" data-team="${team.id}" style="border-left-color:${team.color}">
-      <div class="team-title">
-        <span>팀${i + 1}<span class="team-count"> · ${team.players.length}명</span></span>
-        <span class="team-title-right">
-          <button data-action="delTeam" class="small-btn team-del-btn" title="팀 삭제">✕</button>
-        </span>
+  const textColor = readableTextOn(team.color);
+  const swatches = TEAM_PALETTE.map(c =>
+    `<button class="swatch${c === team.color ? ' selected' : ''}" style="background:${c}" data-color="${c}" title="팀 색상"></button>`
+  ).join('');
+  const currentFormation = team.formation || '433';
+  const formOptions = FORMATION_KEYS.map(k => `<option value="${k}"${k === currentFormation ? ' selected' : ''}>${FORMATION_LABELS[k]}</option>`).join('');
+  topFormationSelect.value = team.formation || '';
+  const playerRows = team.players.map(p => {
+    const vestSwatches = `<button class="vest-swatch none-swatch${!p.vest ? ' selected' : ''}" data-vest="" title="조끼 없음">–</button>` +
+      VEST_UI_COLORS.map(v => `<button class="vest-swatch${p.vest === v.key ? ' selected' : ''}" style="background:${v.css}" data-vest="${v.key}" title="조끼"></button>`).join('');
+    return `<div class="player-chip" data-player="${p.id}">
+      <span class="player-badge" style="background:${team.color};color:${textColor}">${escapeHtml(p.num)}</span>
+      <input type="text" class="player-label-input" value="${escapeHtml(p.num)}" maxlength="3" aria-label="등번호 또는 이름" />
+      <div class="vest-swatch-row">${vestSwatches}</div>
+      <div class="size-stepper">
+        <button data-action="playerSmaller" title="작게">−</button>
+        <button data-action="playerBigger" title="크게">+</button>
       </div>
-      <div class="swatch-row" data-role="teamColor">${swatches}</div>
-      <div class="crest-row">
-        <div class="crest-preview" style="${team.crest ? `background-image:url('${team.crest}')` : ''}"></div>
-        <button class="small-btn" data-action="uploadCrest">팀 마크 이미지</button>
-        ${team.crest ? '<button class="small-btn" data-action="removeCrest">제거</button>' : ''}
-        <input type="file" accept="image/*" class="crest-file-input" style="display:none" />
-      </div>
-      <div class="row-actions">
-        <div class="drag-handle player-handle" draggable="true" style="background:${team.color}">선수 드래그</div>
-        <button data-action="addPlayer" class="small-btn">+ 선수</button>
-        <button data-action="removePlayer" class="small-btn">- 선수</button>
-      </div>
-      <div class="row-actions">
-        <select data-role="formationSelect">${formOptions}</select>
-        <button data-action="applyFormation" class="small-btn">배치</button>
-      </div>
-      ${team.players.length > 0 ? `<div class="player-list">${playerChips}</div>` : ''}
+      <button class="icon-mini" data-action="delPlayer" title="이 선수 삭제">×</button>
     </div>`;
   }).join('');
 
-  totalCountEl.textContent = totalPlayers();
+  teamsPanel.innerHTML = `<div class="team-row" data-team="${team.id}">
+    <div class="card">
+      <div class="card-title">선수 목록 <span class="card-sub">${team.players.length}명 · 번호 칸을 눌러 이름/번호 수정</span></div>
+      ${team.players.length
+        ? `<div class="player-list">${playerRows}</div>`
+        : '<p class="empty-msg">선수가 없어요. 오른쪽에서 포메이션 "배치"를 누르거나 "+ 선수"로 추가하세요.</p>'}
+    </div>
+    <div class="card">
+      <div class="card-title">선수 배치</div>
+      <div class="row-actions wrap">
+        <div class="drag-handle player-handle" draggable="true" style="background:${team.color};color:${textColor}">끌어서 놓기</div>
+        <button data-action="addPlayer" class="small-btn">+ 선수</button>
+        <button data-action="removePlayer" class="small-btn">− 선수</button>
+      </div>
+      <div class="row-actions">
+        <select data-role="formationSelect">${formOptions}</select>
+        <button data-action="applyFormation" class="small-btn accent">배치</button>
+      </div>
+      <div class="card-title">팀 색상</div>
+      <div class="swatch-row" data-role="teamColor">${swatches}</div>
+      <div class="card-title">팀 마크</div>
+      <div class="crest-row">
+        <div class="crest-preview${team.crest ? ' has-crest' : ''}" style="${team.crest ? `background-image:url('${team.crest}')` : ''}"></div>
+        <button class="small-btn" data-action="uploadCrest">사진 선택</button>
+        ${team.crest ? '<button class="small-btn ghost" data-action="removeCrest">제거</button>' : ''}
+        <input type="file" accept="image/*" class="crest-file-input" style="display:none" />
+      </div>
+      <div class="row-actions">
+        <button data-action="delTeam" class="small-btn danger">${teamName(index)} 삭제</button>
+      </div>
+    </div>
+  </div>`;
 }
+
+teamTabsEl.addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-team-tab]');
+  if (!tab) return;
+  selectedTeamId = tab.dataset.teamTab;
+  renderTeamsPanel();
+});
+
+matchBadgesEl.addEventListener('click', (e) => {
+  const badge = e.target.closest('[data-badge]');
+  if (!badge) return;
+  if (badge.dataset.badge === 'add') addTeam();
+  else selectedTeamId = badge.dataset.badge;
+  renderTeamsPanel();
+  openSheet('team');
+});
 
 function totalPlayers() {
   return state.teams.reduce((s, t) => s + t.players.length, 0);
@@ -1528,6 +1685,7 @@ function applyFormationToTeam(id, key) {
   const idx = state.teams.findIndex(t => t.id === id);
   const side = idx % 2 === 0 ? 'L' : 'R';
   state.teams[idx].players = formationToPlayers(key, side);
+  state.teams[idx].formation = key;
   renderTeamsPanel();
   render();
 }
@@ -1539,7 +1697,9 @@ function addTeam() {
   }
   const used = state.teams.map(t => t.color);
   const color = TEAM_PALETTE.find(c => !used.includes(c)) || TEAM_PALETTE[state.teams.length % TEAM_PALETTE.length];
-  state.teams.push({ id: nextId(), color, players: [] });
+  const team = { id: nextId(), color, players: [] };
+  state.teams.push(team);
+  selectedTeamId = team.id;
   renderTeamsPanel();
   render();
 }
@@ -1559,26 +1719,30 @@ teamsPanel.addEventListener('click', (e) => {
   if (!row) return;
   const id = row.dataset.team;
 
-  if (e.target.matches('.swatch') && !e.target.matches('.vest-swatch')) {
-    findTeam(id).color = e.target.dataset.color;
+  const swatch = e.target.closest('.swatch');
+  if (swatch) {
+    findTeam(id).color = swatch.dataset.color;
     renderTeamsPanel();
     render();
     return;
   }
 
-  if (e.target.matches('.vest-swatch')) {
-    const chip = e.target.closest('.player-chip');
+  const vest = e.target.closest('.vest-swatch');
+  if (vest) {
+    const chip = vest.closest('.player-chip');
     const team = findTeam(id);
     const player = team && team.players.find(p => p.id === chip.dataset.player);
     if (player) {
-      player.vest = e.target.dataset.vest || null;
+      player.vest = vest.dataset.vest || null;
       renderTeamsPanel();
       render();
     }
     return;
   }
 
-  const action = e.target.dataset.action;
+  const actionEl = e.target.closest('[data-action]');
+  if (!actionEl) return;
+  const action = actionEl.dataset.action;
   if (action === 'addPlayer') addPlayerToTeam(id);
   else if (action === 'removePlayer') removePlayerFromTeam(id);
   else if (action === 'delTeam') removeTeam(id);
@@ -1629,6 +1793,7 @@ teamsPanel.addEventListener('input', (e) => {
   const player = team && team.players.find(p => p.id === chip.dataset.player);
   if (player) {
     player.num = e.target.value;
+    chip.querySelector('.player-badge').textContent = e.target.value;
     render();
   }
 });
@@ -1806,6 +1971,7 @@ const gridToggleBtn = document.getElementById('gridToggleBtn');
 gridToggleBtn.addEventListener('click', () => {
   state.showGrid = !state.showGrid;
   gridToggleBtn.classList.toggle('active', state.showGrid);
+  syncQuickButtons();
   render();
 });
 
@@ -1834,6 +2000,7 @@ function changePitchMode(mode, goalPos) {
   setZoom(1);
   boardWrap.scrollLeft = 0;
   boardWrap.scrollTop = 0;
+  syncQuickButtons();
   render();
 }
 
@@ -1855,6 +2022,7 @@ function syncZoneSelects() {
   widthZoneSelect.value = String(state.zones.widthZones);
   gridToggleBtn.classList.toggle('active', state.showGrid);
   syncPitchModeUI();
+  syncQuickButtons();
 }
 
 lengthZoneSelect.addEventListener('change', (e) => {
@@ -1916,6 +2084,7 @@ const hint = document.getElementById('hint');
 function refreshModeButtons() {
   document.getElementById('railMoveBtn').classList.toggle('active', mode === 'move');
   document.getElementById('railDrawBtn').classList.toggle('active', mode === 'draw');
+  canvas.classList.toggle('draw-cursor', mode === 'draw');
   hint.textContent = mode === 'move'
     ? '이동 모드: 드래그해서 옮기세요. 더블클릭(또는 길게 누르기)하거나 삭제 영역으로 끌면 삭제됩니다. 확대 중엔 손가락 두 개로 오므리거나 벌려서 확대/이동하세요.'
     : '그리기 모드: 드래그해서 선을 그리세요. 이동 모드에서 선을 더블클릭하면 삭제됩니다.';
@@ -1947,9 +2116,15 @@ document.getElementById('resetBtn').addEventListener('click', () => {
 });
 
 document.getElementById('exportBtn').addEventListener('click', () => {
+  const out = document.createElement('canvas');
+  out.width = W;
+  out.height = H;
+  const octx = out.getContext('2d');
+  paintGrass(octx, W, H);
+  octx.drawImage(canvas, 0, 0);
   const link = document.createElement('a');
   link.download = `soccer-tactics-${Date.now()}.png`;
-  link.href = canvas.toDataURL('image/png');
+  link.href = out.toDataURL('image/png');
   link.click();
 });
 
