@@ -31,9 +31,12 @@ function setFieldGeometry() {
   field = { left: 50, top: 50, right: 50 + fieldW, bottom: 50 + fieldH };
   fieldCenterX = (field.left + field.right) / 2;
   fieldCenterY = (field.top + field.bottom) / 2;
-  canvas.width = W;
-  canvas.height = H;
+  // 실제 픽셀 수는 화면 해상도/확대에 맞춰 더 크게 잡는다 (선명하게). 그리기는 항상 W x H 좌표로.
+  canvas.width = Math.round(W * backingScale);
+  canvas.height = Math.round(H * backingScale);
 }
+
+let backingScale = 1;
 
 const boxDepthPx = PITCH.penaltyDepth * SCALE;
 const boxWidthPx = PITCH.penaltyWidth * SCALE;
@@ -166,7 +169,7 @@ function ensureStateDefaults() {
   state.teams.forEach(t => { if (!t.id) t.id = nextId(); });
 }
 
-let mode = 'move'; // 'move' | 'draw'
+let mode = 'move'; // 'move' | 'draw' | 'erase'
 let dragTarget = null;
 let dragLine = null; // { index, lastX, lastY } - 이동 모드에서 선을 잡고 옮기는 중
 let dragIsTouch = false;
@@ -886,6 +889,7 @@ function drawText(t) {
 }
 
 function render() {
+  ctx.setTransform(backingScale, 0, 0, backingScale, 0, 0);
   drawField();
   drawGrid();
   drawZones();
@@ -1009,11 +1013,25 @@ topFormationSelect.addEventListener('change', () => {
   applyFormationToTeam(team.id, key);
 });
 
-document.getElementById('railClearBtn').addEventListener('click', () => {
-  if (state.arrows.length === 0) return;
-  if (!confirm('필드에 그린 선을 모두 지울까요? (실행취소로 되돌릴 수 있어요)')) return;
-  state.arrows = [];
-  render();
+// ---- 잠깐 떴다 사라지는 안내 ----
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+function showToast(text) {
+  toastEl.textContent = text;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+}
+
+// 지우개 모드: 켜둔 상태에서 선수/용품/텍스트/선을 터치(또는 문지르기)하면 지워진다
+document.getElementById('railEraseBtn').addEventListener('click', () => {
+  if (mode === 'erase') {
+    mode = 'move';
+  } else {
+    mode = 'erase';
+    showToast('지울 것을 터치하세요 · 문지르면 여러 개 지워져요');
+  }
+  refreshModeButtons();
 });
 
 // ---- 오른쪽 떠 있는 버튼: 풀코트/하프코트, 격자 ----
@@ -1022,15 +1040,24 @@ const courtToggleLabel = document.getElementById('courtToggleLabel');
 const gridQuickBtn = document.getElementById('gridQuickBtn');
 
 function syncQuickButtons() {
-  courtToggleLabel.textContent = state.pitchMode === 'half' ? '하프' : '풀';
+  if (state.pitchMode === 'half') {
+    courtToggleLabel.textContent = state.halfGoalPos === 'top' ? '하프 ▲' : '하프 ▼';
+  } else {
+    courtToggleLabel.textContent = '풀';
+  }
   courtToggleBtn.classList.toggle('active', state.pitchMode === 'half');
+  courtToggleBtn.title = '누를 때마다: 풀코트 → 하프(골대 아래) → 하프(골대 위)';
   gridQuickBtn.classList.toggle('active', !!state.showGrid);
 }
 
+// 풀코트 → 하프(골대 아래) → 하프(골대 위) → 풀코트 순서로 바뀐다
 courtToggleBtn.addEventListener('click', () => {
-  changePitchMode(state.pitchMode === 'half' ? 'full' : 'half', state.halfGoalPos);
+  if (state.pitchMode === 'full') changePitchMode('half', 'bottom');
+  else if (state.halfGoalPos === 'bottom') changePitchMode('half', 'top');
+  else changePitchMode('full', state.halfGoalPos);
   syncPitchModeUI();
   syncQuickButtons();
+  showToast(state.pitchMode === 'full' ? '풀코트' : (state.halfGoalPos === 'top' ? '하프코트 · 골대 위' : '하프코트 · 골대 아래'));
 });
 
 gridQuickBtn.addEventListener('click', () => {
@@ -1105,6 +1132,11 @@ function onDown(evt) {
   isPointerDown = true;
   dragIsTouch = !!evt.touches;
 
+  if (mode === 'erase') {
+    eraseAt(x, y);
+    return;
+  }
+
   if (mode === 'move') {
     dragTarget = findTargetAt(x, y, dragIsTouch ? TOUCH_HIT_TOLERANCE : 4);
     if (dragTarget && dragTarget.kind === 'equipment') {
@@ -1156,10 +1188,19 @@ function onDown(evt) {
   }
 }
 
+function eraseAt(x, y) {
+  deleteAt(x, y, dragIsTouch ? TOUCH_HIT_TOLERANCE : 6);
+}
+
 function onMove(evt) {
   if (!isPointerDown) return;
   evt.preventDefault();
   const { x, y } = getPos(evt);
+
+  if (mode === 'erase') {
+    eraseAt(x, y);
+    return;
+  }
 
   if (longPressStart) {
     const { clientX, clientY } = getClientXY(evt);
@@ -1235,40 +1276,118 @@ function onUp(evt) {
 // ---- 확대/축소 (버튼 + 핀치 줌) ----
 const boardWrap = document.getElementById('boardWrap');
 const zoomLabel = document.getElementById('zoomLabel');
-const ZOOM_MIN = 1, ZOOM_MAX = 3;
+const ZOOM_MIN = 1, ZOOM_MAX = 5;
 let zoomLevel = 1;
 let pinchState = null;
+const stageEl = document.querySelector('.stage');
+
+// 확대 1배 = 남는 공간을 꽉 채우는 크기. 확대는 이 크기를 기준으로 부드럽게 커진다.
+function fittedCanvasSize() {
+  const cw = boardWrap.clientWidth, ch = boardWrap.clientHeight;
+  if (cw < 20 || ch < 20) return { w: W, h: H };
+  const s = Math.min(cw / W, ch / H);
+  return { w: Math.floor(W * s), h: Math.floor(H * s) };
+}
+
+// 화면에 보이는 크기 x 기기 해상도만큼 캔버스 픽셀을 늘려 선이 흐려지지 않게 한다 (메모리 때문에 최대 3배)
+function updateBackingScale(cssScale) {
+  const k = Math.min(3, Math.max(1, (window.devicePixelRatio || 1) * cssScale));
+  const next = Math.round(k * 4) / 4;
+  if (next === backingScale) return;
+  backingScale = next;
+  canvas.width = Math.round(W * backingScale);
+  canvas.height = Math.round(H * backingScale);
+  render();
+}
 
 function applyZoomStyle() {
-  if (zoomLevel <= 1) {
-    canvas.style.width = '';
-    canvas.style.height = '';
-    canvas.style.maxWidth = '100%';
-  } else {
-    canvas.style.maxWidth = 'none';
-    canvas.style.width = (W * zoomLevel) + 'px';
-    canvas.style.height = (H * zoomLevel) + 'px';
-  }
+  const fit = fittedCanvasSize();
+  canvas.style.maxWidth = 'none';
+  canvas.style.maxHeight = 'none';
+  canvas.style.width = (fit.w * zoomLevel) + 'px';
+  canvas.style.height = (fit.h * zoomLevel) + 'px';
+  updateBackingScale(fit.w * zoomLevel / W);
   zoomLabel.textContent = Math.round(zoomLevel * 100) + '%';
 }
 
-function setZoom(z) {
-  zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
-  applyZoomStyle();
+// boardWrap 기준(회전 전) 좌표. 화면이 90도 돌아가 있으면 되돌려서 계산한다.
+function clientToWrapLocal(clientX, clientY) {
+  const r = boardWrap.getBoundingClientRect();
+  return isRotated()
+    ? { x: clientY - r.top, y: r.right - clientX }
+    : { x: clientX - r.left, y: clientY - r.top };
 }
 
-document.getElementById('zoomInBtn').addEventListener('click', () => setZoom(zoomLevel + 0.25));
-document.getElementById('zoomOutBtn').addEventListener('click', () => setZoom(zoomLevel - 0.25));
+// focal(boardWrap 화면 안의 한 점) 아래에 있던 필드 지점이 확대 후에도 그 자리에 있도록 확대한다.
+function canvasFractionAt(focal) {
+  return {
+    u: (boardWrap.scrollLeft + focal.x - canvas.offsetLeft) / canvas.offsetWidth,
+    v: (boardWrap.scrollTop + focal.y - canvas.offsetTop) / canvas.offsetHeight,
+  };
+}
+
+function keepFractionAt(frac, focal) {
+  boardWrap.scrollLeft = canvas.offsetLeft + frac.u * canvas.offsetWidth - focal.x;
+  boardWrap.scrollTop = canvas.offsetTop + frac.v * canvas.offsetHeight - focal.y;
+}
+
+function setZoom(z, focal) {
+  const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+  const f = focal || { x: boardWrap.clientWidth / 2, y: boardWrap.clientHeight / 2 };
+  const frac = canvasFractionAt(f);
+  zoomLevel = next;
+  applyZoomStyle();
+  keepFractionAt(frac, f);
+}
+
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => applyZoomStyle()).observe(boardWrap);
+} else {
+  window.addEventListener('resize', () => applyZoomStyle());
+}
+
+// 오른쪽 +/− 버튼: 한 번 누르면 한 단계, 누르고 있으면 계속 부드럽게 확대/축소
+function bindHoldZoom(btn, direction) {
+  let raf = null, holdTimer = null, lastT = 0;
+  const step = (t) => {
+    const dt = lastT ? (t - lastT) / 1000 : 0;
+    lastT = t;
+    setZoom(zoomLevel * Math.exp(direction * 0.9 * dt));
+    raf = requestAnimationFrame(step);
+  };
+  const stop = () => {
+    clearTimeout(holdTimer);
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+    lastT = 0;
+  };
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    setZoom(zoomLevel * (direction > 0 ? 1.25 : 0.8));
+    holdTimer = setTimeout(() => { raf = requestAnimationFrame(step); }, 280);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
+}
+
+bindHoldZoom(document.getElementById('zoomInBtn'), 1);
+bindHoldZoom(document.getElementById('zoomOutBtn'), -1);
 document.getElementById('zoomResetBtn').addEventListener('click', () => {
   setZoom(1);
   boardWrap.scrollLeft = 0;
   boardWrap.scrollTop = 0;
 });
 
+// 트랙패드 두 손가락 확대(ctrl+휠)도 마우스 위치 기준으로 확대
+boardWrap.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  setZoom(zoomLevel * Math.exp(-e.deltaY * 0.01), clientToWrapLocal(e.clientX, e.clientY));
+}, { passive: false });
 
 function touchDist(t1, t2) { return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY); }
 function touchMid(t1, t2) { return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 }; }
 
+// 두 손가락은 필드 밖 잔디에서도 확대/이동할 수 있게 stage 전체에서 받는다.
 function handleTouchStart(evt) {
   if (evt.touches.length === 2) {
     evt.preventDefault();
@@ -1278,30 +1397,31 @@ function handleTouchStart(evt) {
     currentDraw = null;
     cancelLongPress();
     trashZone.classList.remove('active', 'hover');
+    const mid = touchMid(evt.touches[0], evt.touches[1]);
+    const focal = clientToWrapLocal(mid.x, mid.y);
     pinchState = {
       startDist: touchDist(evt.touches[0], evt.touches[1]),
       startZoom: zoomLevel,
-      startMid: touchMid(evt.touches[0], evt.touches[1]),
-      startScrollLeft: boardWrap.scrollLeft,
-      startScrollTop: boardWrap.scrollTop,
+      frac: canvasFractionAt(focal),
     };
+    render();
     return;
   }
-  onDown(evt);
+  if (evt.touches.length === 1 && evt.target === canvas) onDown(evt);
 }
 
 function handleTouchMove(evt) {
   if (evt.touches.length === 2 && pinchState) {
     evt.preventDefault();
     const dist = touchDist(evt.touches[0], evt.touches[1]);
-    setZoom(pinchState.startZoom * (dist / pinchState.startDist));
     const mid = touchMid(evt.touches[0], evt.touches[1]);
-    const d = screenDeltaToLocal(mid.x - pinchState.startMid.x, mid.y - pinchState.startMid.y);
-    boardWrap.scrollLeft = pinchState.startScrollLeft - d.dx;
-    boardWrap.scrollTop = pinchState.startScrollTop - d.dy;
+    const focal = clientToWrapLocal(mid.x, mid.y);
+    zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pinchState.startZoom * (dist / pinchState.startDist)));
+    applyZoomStyle();
+    keepFractionAt(pinchState.frac, focal);
     return;
   }
-  onMove(evt);
+  if (evt.target === canvas || isPointerDown) onMove(evt);
 }
 
 function handleTouchEnd(evt) {
@@ -1312,8 +1432,8 @@ function handleTouchEnd(evt) {
 canvas.addEventListener('mousedown', onDown);
 canvas.addEventListener('mousemove', onMove);
 window.addEventListener('mouseup', onUp);
-canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+stageEl.addEventListener('touchstart', handleTouchStart, { passive: false });
+stageEl.addEventListener('touchmove', handleTouchMove, { passive: false });
 window.addEventListener('touchend', handleTouchEnd);
 window.addEventListener('touchcancel', handleTouchEnd);
 
@@ -2181,7 +2301,9 @@ const hint = document.getElementById('hint');
 function refreshModeButtons() {
   document.getElementById('railMoveBtn').classList.toggle('active', mode === 'move');
   document.getElementById('railDrawBtn').classList.toggle('active', mode === 'draw');
+  document.getElementById('railEraseBtn').classList.toggle('active', mode === 'erase');
   canvas.classList.toggle('draw-cursor', mode === 'draw');
+  canvas.classList.toggle('erase-cursor', mode === 'erase');
   hint.textContent = mode === 'move'
     ? '이동 모드: 드래그해서 옮기세요. 더블클릭(또는 길게 누르기)하거나 삭제 영역으로 끌면 삭제됩니다. 확대 중엔 손가락 두 개로 오므리거나 벌려서 확대/이동하세요.'
     : '그리기 모드: 드래그해서 선을 그리세요. 이동 모드에서 선을 더블클릭하면 삭제됩니다.';
@@ -2217,7 +2339,7 @@ document.getElementById('exportBtn').addEventListener('click', () => {
   out.height = H;
   const octx = out.getContext('2d');
   paintGrass(octx, W, H);
-  octx.drawImage(canvas, 0, 0);
+  octx.drawImage(canvas, 0, 0, W, H);
   const link = document.createElement('a');
   link.download = `soccer-tactics-${Date.now()}.png`;
   link.href = out.toDataURL('image/png');
@@ -2293,29 +2415,109 @@ savesList.addEventListener('click', (e) => {
 });
 
 // ---- 공유 링크 (로그인 없이, 링크 하나로 지인에게 작전 전달) ----
-function encodeStateToShareHash(st) {
-  return btoa(unescape(encodeURIComponent(JSON.stringify(st))));
+// 링크를 짧게 만들기 위해: 팀 마크 사진은 빼고, 좌표는 정수로, 이름표 대신 배열로 줄인 뒤
+// deflate로 압축해서 URL에 안전한 base64로 넣는다. (#z=압축본, #c=압축 불가 브라우저용)
+function compactState(st) {
+  const r = Math.round;
+  const small = (n, d) => (n ? +n.toFixed(d) : 0);
+  return {
+    v: 2,
+    m: st.pitchMode === 'half' ? (st.halfGoalPos === 'top' ? 'ht' : 'hb') : 'f',
+    g: st.showGrid ? 1 : 0,
+    z: [st.zones.lengthZones, st.zones.widthZones],
+    t: st.teams.map(t => [t.color, t.formation || 0, t.players.map(p => [p.num, r(p.x), r(p.y), p.vest || 0, p.scale && p.scale !== 1 ? small(p.scale, 2) : 0])]),
+    e: st.equipment.map(e => [e.type, e.color, r(e.x), r(e.y), small(e.rot, 3), e.scale && e.scale !== 1 ? small(e.scale, 2) : 0]),
+    a: st.arrows.map(a => [a.type, a.color, a.hasArrow === false ? 0 : 1, a.points.flatMap(p => [r(p.x), r(p.y)])]),
+    x: st.texts.map(t => [t.text, r(t.x), r(t.y)]),
+  };
 }
-function decodeStateFromShareHash(hash) {
-  return JSON.parse(decodeURIComponent(escape(atob(hash))));
+
+function expandState(c) {
+  const pts = (flat) => {
+    const out = [];
+    for (let i = 0; i < flat.length; i += 2) out.push({ x: flat[i], y: flat[i + 1] });
+    return out;
+  };
+  return {
+    pitchMode: c.m === 'f' ? 'full' : 'half',
+    halfGoalPos: c.m === 'ht' ? 'top' : 'bottom',
+    showGrid: !!c.g,
+    zones: { lengthZones: c.z[0] || 0, widthZones: c.z[1] || 0 },
+    teams: c.t.map(([color, formation, players]) => ({
+      id: nextId(), color, formation: formation || undefined,
+      players: players.map(([num, x, y, vest, scale]) => {
+        const p = { id: nextId(), num, x, y };
+        if (vest) p.vest = vest;
+        if (scale) p.scale = scale;
+        return p;
+      }),
+    })),
+    equipment: c.e.map(([type, color, x, y, rot, scale]) => {
+      const e = { id: nextId(), type, color, x, y, rot: rot || 0 };
+      if (scale) e.scale = scale;
+      return e;
+    }),
+    arrows: c.a.map(([type, color, hasArrow, flat]) => ({ type, color, hasArrow: !!hasArrow, points: pts(flat) })),
+    texts: c.x.map(([text, x, y]) => ({ id: nextId(), text, x, y })),
+  };
+}
+
+function bytesToB64url(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function b64urlToBytes(s) {
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4);
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+const canCompress = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
+
+async function makeShareHash(st) {
+  const json = JSON.stringify(compactState(st));
+  const raw = new TextEncoder().encode(json);
+  if (!canCompress) return '#c=' + bytesToB64url(raw);
+  const stream = new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  const zipped = new Uint8Array(await new Response(stream).arrayBuffer());
+  return '#z=' + bytesToB64url(zipped);
+}
+
+async function readShareHash(hash) {
+  const m = hash.match(/^#([zcs])=(.+)$/);
+  if (!m) return null;
+  const [, kind, data] = m;
+  if (kind === 's') {
+    // 예전 방식 링크 (전체 상태를 그대로 base64로 넣던 버전)
+    return JSON.parse(decodeURIComponent(escape(atob(data))));
+  }
+  let bytes = b64urlToBytes(data);
+  if (kind === 'z') {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  return expandState(JSON.parse(new TextDecoder().decode(bytes)));
 }
 
 const shareLinkRow = document.getElementById('shareLinkRow');
 const shareLinkInput = document.getElementById('shareLinkInput');
 
-document.getElementById('makeShareLinkBtn').addEventListener('click', () => {
+document.getElementById('makeShareLinkBtn').addEventListener('click', async () => {
   let url;
   try {
-    const encoded = encodeStateToShareHash(state);
-    url = location.origin + location.pathname + '#s=' + encoded;
+    url = location.origin + location.pathname + await makeShareHash(state);
   } catch (e) {
     alert('링크를 만들지 못했습니다.');
     return;
   }
   shareLinkInput.value = url;
   shareLinkRow.style.display = 'flex';
-  if (url.length > 6000) {
-    alert('작전 내용(특히 팀 마크 이미지)이 많아서 링크가 아주 깁니다. 카카오톡 등에서 링크가 깨질 수 있어요.');
+  if (state.teams.some(t => t.crest)) {
+    showToast('팀 마크 사진은 링크에 포함되지 않아요 (팀 색상으로 보여요)');
   }
 });
 
@@ -2332,23 +2534,32 @@ document.getElementById('copyShareLinkBtn').addEventListener('click', () => {
   alert(copied ? '링크가 복사되었습니다! 카카오톡 등에 붙여넣기 하세요.' : '길게 눌러서 직접 복사해주세요.');
 });
 
-function loadStateFromShareLinkIfPresent() {
-  const m = location.hash.match(/^#s=(.+)$/);
-  if (!m) return false;
+async function loadStateFromShareLinkIfPresent() {
+  if (!/^#[zcs]=/.test(location.hash)) return;
   try {
-    state = decodeStateFromShareHash(m[1]);
+    const loaded = await readShareHash(location.hash);
+    if (!loaded) return;
+    state = loaded;
     ensureStateDefaults();
-    idCounter = Date.now();
-    return true;
+    idCounter = Math.max(idCounter, Date.now());
+    setFieldGeometry();
+    setZoom(1);
+    selectedEquipId = null;
+    renderTeamsPanel();
+    syncZoneSelects();
+    renderTextList();
+    updateEquipControlsVisibility();
+    render();
+    resetHistory();
+    showToast('공유받은 작전을 불러왔어요');
   } catch (e) {
     console.warn('공유 링크를 불러오지 못했습니다.', e);
-    return false;
+    showToast('공유 링크를 불러오지 못했어요');
   }
 }
 
 // ---- 초기화 ----
 initState();
-loadStateFromShareLinkIfPresent();
 setFieldGeometry();
 applyZoomStyle();
 refreshModeButtons();
@@ -2360,3 +2571,4 @@ renderTextList();
 renderSavesPanel();
 render();
 resetHistory();
+loadStateFromShareLinkIfPresent();

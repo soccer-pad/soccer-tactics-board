@@ -356,11 +356,46 @@ canvas#board.draw-cursor {
   color: #fff;
 }
 
-/* 모드(이동/그리기) 버튼: 선택되면 파랗게 꽉 채움 */
+/* 모드(이동/그리기/지우기) 버튼: 선택되면 꽉 채움 */
 .rail-btn.mode-btn.active {
   background: var(--accent);
   color: #fff;
   box-shadow: 0 4px 14px rgba(47,124,246,0.4);
+}
+
+.rail-btn.erase-btn.active {
+  background: var(--danger);
+  box-shadow: 0 4px 14px rgba(229,83,75,0.45);
+}
+
+canvas#board.erase-cursor {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26'%3E%3Ccircle cx='13' cy='13' r='10' fill='rgba(229,83,75,0.25)' stroke='white' stroke-width='2'/%3E%3C/svg%3E") 13 13, crosshair;
+}
+
+/* 잠깐 떴다 사라지는 안내 문구 */
+.toast {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 60;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(17,18,21,0.92);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 /* ---- 오른쪽 떠 있는 컨트롤 ---- */
@@ -413,6 +448,7 @@ canvas#board.draw-cursor {
   font-size: 10px;
   font-weight: 600;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .float-btn.active .float-btn-label { color: #cfe0ff; }
@@ -1205,6 +1241,7 @@ input[type="range"] {
   .float-btn-label { display: none; }
 
   .stage { padding: 56px 52px 6px 66px; }
+  .toast { top: 60px; }
 
   .bottom-sheet { left: 66px; right: 6px; bottom: 6px; max-height: calc(100% - 64px); border-radius: 18px; }
   .sheet-grabber { padding: 6px 0 2px; }
