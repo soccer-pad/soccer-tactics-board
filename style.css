@@ -216,39 +216,111 @@ canvas#board.draw-cursor {
 
 /* 포메이션 알약 */
 .formation-pill {
-  position: relative;
   display: flex;
   align-items: center;
   height: 40px;
-  padding: 0 34px 0 16px;
-  border-radius: 999px;
-  background: var(--card-2);
-  border: 1px solid var(--line);
-  cursor: pointer;
 }
 
-.formation-pill select {
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  border: none;
-  padding: 0;
-  color: var(--text);
+.formation-pill .cselect-btn {
+  height: 100%;
+  min-width: 118px;
+  padding: 0 12px 0 16px;
+  border-radius: 999px;
   font-size: 15px;
   font-weight: 600;
-  cursor: pointer;
-  outline: none;
 }
 
-.formation-pill select option { background: var(--panel-solid); color: var(--text); }
+/* ---- 직접 만든 선택 메뉴 (휴대폰 기본 선택창은 화면 회전을 따라오지 않아서 사용) ---- */
+select.native-hidden {
+  display: none !important;
+}
 
-.pill-caret {
-  position: absolute;
-  right: 12px;
+.cselect-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--card-2);
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.cselect-btn:hover { background: #2f3036; }
+.cselect-btn.open { border-color: rgba(47,124,246,0.7); }
+
+.cselect-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cselect-btn svg {
   width: 16px;
   height: 16px;
-  pointer-events: none;
-  color: var(--muted);
+  flex: 0 0 auto;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s ease;
+}
+
+.cselect-btn.open svg { transform: rotate(180deg); }
+
+.select-menu {
+  position: absolute;
+  z-index: 200;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+  background: rgba(24, 25, 29, 0.98);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.55);
+}
+
+.select-menu.open { display: flex; }
+
+.select-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.select-menu button:hover { background: rgba(255,255,255,0.07); }
+
+.select-menu button.selected {
+  background: var(--accent-soft);
+  color: #fff;
+  font-weight: 700;
+}
+
+.select-menu button.selected::after {
+  content: '✓';
+  color: var(--accent-hover);
 }
 
 /* 팀 vs 팀 뱃지 */
@@ -544,6 +616,25 @@ canvas#board.erase-cursor {
   box-shadow: inset 0 0 0 1px rgba(47,124,246,0.35);
 }
 
+.sheet-close {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: 9px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+}
+
+.sheet-close svg { width: 16px; height: 16px; }
+
+.row-actions .cselect-btn { flex: 1 1 auto; width: auto; }
+
 .tab-panels {
   flex: 1 1 auto;
   min-width: 0;
@@ -777,30 +868,46 @@ button { cursor: pointer; }
 }
 
 /* ---- 삭제 영역 / 터치 드래그 고스트 ---- */
+/* 드래그 중에만 오른쪽 아래 구석(필드 바깥)에 나타나는 삭제 버튼 */
 .trash-zone {
-  position: fixed;
-  left: 50%;
-  bottom: 22px;
-  transform: translateX(-50%);
-  background: rgba(200, 40, 40, 0.92);
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: rgba(200, 40, 40, 0.88);
+  border: 2px solid rgba(255,255,255,0.25);
   color: #fff;
-  padding: 13px 24px;
-  border-radius: 999px;
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 700;
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   z-index: 9998;
   display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   pointer-events: none;
   transition: transform 0.12s, background 0.12s;
-  white-space: nowrap;
 }
 
-.trash-zone.active { display: block; }
+.trash-zone svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trash-zone.active { display: flex; }
 
 .trash-zone.hover {
   background: #e53935;
-  transform: translateX(-50%) scale(1.15);
+  border-color: #fff;
+  transform: scale(1.22);
 }
 
 .touch-ghost {
@@ -1210,8 +1317,7 @@ input[type="range"] {
 
 @container app (max-width: 700px) {
   .top-bar-center .top-bar-sep { display: none; }
-  .formation-pill { padding: 0 28px 0 12px; }
-  .formation-pill select { font-size: 14px; }
+  .formation-pill .cselect-btn { min-width: 96px; font-size: 14px; padding: 0 10px 0 12px; }
   .sheet-nav { width: 64px; padding: 4px 6px 10px; }
   .sheet-nav-btn { flex-direction: column; gap: 3px; padding: 8px 4px; font-size: 10px; }
   .sheet-nav-btn svg { width: 20px; height: 20px; }
@@ -1243,12 +1349,37 @@ input[type="range"] {
   .stage { padding: 56px 52px 6px 66px; }
   .toast { top: 60px; }
 
-  .bottom-sheet { left: 66px; right: 6px; bottom: 6px; max-height: calc(100% - 64px); border-radius: 18px; }
-  .sheet-grabber { padding: 6px 0 2px; }
-  .sheet-nav { width: 64px; padding: 2px 6px 8px; }
-  .sheet-nav-btn { flex-direction: column; gap: 2px; padding: 7px 2px; font-size: 10px; text-align: center; }
-  .sheet-nav-btn svg { width: 19px; height: 19px; }
-  .tab-panels { padding: 0 12px 12px; }
-  .panel-title { font-size: 15px; }
+  .trash-zone { right: 5px; bottom: 8px; width: 46px; height: 46px; font-size: 9px; gap: 0; }
+  .trash-zone svg { width: 18px; height: 18px; }
+
+  /* 패널은 화면 아래 절반만: 위쪽 절반에서 경기장을 보면서 조작 */
+  .bottom-sheet { left: 66px; right: 52px; bottom: 6px; max-height: 52%; border-radius: 16px; }
+  .sheet-grabber { display: none; }
+  .sheet-body { flex-direction: column; }
+  .sheet-nav {
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+    padding: 5px 6px;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .sheet-nav-btn { flex: 0 0 auto; flex-direction: row; gap: 5px; padding: 6px 10px; font-size: 12px; border-radius: 9px; }
+  .sheet-nav-btn svg { width: 16px; height: 16px; }
+  .sheet-close { display: flex; }
+  .tab-panels { padding: 6px 10px 10px; }
+  .tab-panel { gap: 8px; }
+  .panel-head { min-height: 0; gap: 8px; }
+  .panel-title, .panel-sub { display: none; }
+  .pill-btn { height: 30px; }
+  .team-tab { height: 28px; }
+  .card { padding: 10px 12px; gap: 8px; }
   .player-list { max-height: none; }
+}
+
+@container app (max-height: 520px) and (max-width: 700px) {
+  .sheet-nav-btn span { display: none; }
 }

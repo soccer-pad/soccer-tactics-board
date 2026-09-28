@@ -26,10 +26,9 @@
       </div>
 
       <div class="top-bar-center">
-        <label class="formation-pill" title="첫 번째(선택된) 팀에 포메이션 적용">
+        <div class="formation-pill" title="선택된 팀에 포메이션 적용">
           <select id="topFormationSelect" aria-label="포메이션"></select>
-          <svg class="pill-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-        </label>
+        </div>
         <span class="top-bar-sep"></span>
         <div class="match-badges" id="matchBadges"></div>
       </div>
@@ -115,8 +114,12 @@
     </div>
 
     <p class="hint" id="hint"></p>
-    <div id="trashZone" class="trash-zone">여기로 끌어서 삭제</div>
+    <div id="trashZone" class="trash-zone">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>
+      <span>삭제</span>
+    </div>
     <div id="toast" class="toast"></div>
+    <div id="selectMenu" class="select-menu" role="listbox"></div>
 
     <!-- 하단 시트 -->
     <div class="bottom-sheet" id="bottomSheet">
@@ -140,6 +143,9 @@
           </button>
           <button class="sheet-nav-btn" data-tab="save">
             <svg viewBox="0 0 24 24"><path d="M5 3h11l3 3v13a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/><path d="M7 3v5h8V3"/></svg><span>저장</span>
+          </button>
+          <button class="sheet-close" id="sheetCloseBtn" aria-label="패널 닫기">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
           </button>
         </nav>
 

@@ -975,6 +975,106 @@ document.querySelectorAll('.sheet-nav-btn[data-tab]').forEach(btn => {
 });
 
 document.getElementById('sheetGrabber').addEventListener('click', closeSheet);
+document.getElementById('sheetCloseBtn').addEventListener('click', closeSheet);
+
+// ---- 직접 그리는 선택 메뉴 ----
+// 휴대폰 기본 선택창(<select>)은 CSS로 돌린 화면을 따라오지 않고 세로로 떠버리므로,
+// <select>는 숨겨두고(값/이벤트는 그대로 사용) 앱 안에서 메뉴를 그린다.
+const selectMenu = document.getElementById('selectMenu');
+const rotateWrapEl = document.getElementById('rotateWrap');
+let openSelect = null;
+
+const CARET_SVG = '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>';
+
+function selectLabel(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  return opt ? opt.textContent : '';
+}
+
+function enhanceSelects(root) {
+  root.querySelectorAll('select:not(.native-hidden)').forEach(sel => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cselect-btn';
+    btn.setAttribute('aria-haspopup', 'listbox');
+    btn.innerHTML = `<span class="cselect-label"></span>${CARET_SVG}`;
+    btn._select = sel;
+    sel._cbtn = btn;
+    sel.classList.add('native-hidden');
+    sel.after(btn);
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (openSelect === sel) closeSelectMenu();
+      else openSelectMenu(sel);
+    });
+    refreshSelectButton(sel);
+  });
+}
+
+function refreshSelectButton(sel) {
+  if (sel._cbtn) sel._cbtn.querySelector('.cselect-label').textContent = selectLabel(sel);
+}
+
+function refreshCustomSelects() {
+  document.querySelectorAll('select.native-hidden').forEach(refreshSelectButton);
+}
+
+// 요소의 화면 위치를 회전 전(rotate-wrap 안쪽) 좌표로 바꾼다
+function rectInWrap(el) {
+  const r = el.getBoundingClientRect();
+  const wr = rotateWrapEl.getBoundingClientRect();
+  if (isRotated()) {
+    return { left: r.top - wr.top, top: wr.right - r.right, width: r.height, height: r.width };
+  }
+  return { left: r.left - wr.left, top: r.top - wr.top, width: r.width, height: r.height };
+}
+
+function openSelectMenu(sel) {
+  closeSelectMenu();
+  openSelect = sel;
+  sel._cbtn.classList.add('open');
+  selectMenu.innerHTML = [...sel.options]
+    .filter(o => !o.hidden && !o.disabled)
+    .map(o => `<button type="button" role="option" data-value="${escapeHtml(o.value)}" class="${o.value === sel.value ? 'selected' : ''}">${escapeHtml(o.textContent)}</button>`)
+    .join('');
+  selectMenu.classList.add('open');
+
+  const b = rectInWrap(sel._cbtn);
+  const wrapW = rotateWrapEl.clientWidth, wrapH = rotateWrapEl.clientHeight;
+  selectMenu.style.minWidth = b.width + 'px';
+  const menuW = selectMenu.offsetWidth;
+  const menuH = selectMenu.offsetHeight;
+  const left = Math.min(Math.max(8, b.left), wrapW - menuW - 8);
+  let top = b.top + b.height + 6;
+  if (top + menuH > wrapH - 8) top = Math.max(8, b.top - menuH - 6);
+  selectMenu.style.left = left + 'px';
+  selectMenu.style.top = top + 'px';
+}
+
+function closeSelectMenu() {
+  if (openSelect && openSelect._cbtn) openSelect._cbtn.classList.remove('open');
+  openSelect = null;
+  selectMenu.classList.remove('open');
+}
+
+selectMenu.addEventListener('click', (e) => {
+  const item = e.target.closest('[data-value]');
+  if (!item || !openSelect) return;
+  const sel = openSelect;
+  closeSelectMenu();
+  if (sel.value !== item.dataset.value) {
+    sel.value = item.dataset.value;
+    refreshSelectButton(sel);
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+});
+
+document.addEventListener('pointerdown', (e) => {
+  if (!openSelect) return;
+  if (selectMenu.contains(e.target) || (openSelect._cbtn && openSelect._cbtn.contains(e.target))) return;
+  closeSelectMenu();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSelectMenu(); });
 
 // 다른 곳에서 특정 탭을 열어야 할 때 쓰는 함수 (예: 저장 불러오기 후 팀 탭 유지 등)
 function switchTab(name) {
@@ -1660,6 +1760,13 @@ function renderTeamTabs() {
 }
 
 function renderTeamsPanel() {
+  renderTeamsPanelInner();
+  enhanceSelects(teamsPanel);
+  refreshSelectButton(topFormationSelect);
+}
+
+function renderTeamsPanelInner() {
+  if (openSelect && teamsPanel.contains(openSelect)) closeSelectMenu();
   if (!findTeam(selectedTeamId)) selectedTeamId = state.teams.length ? state.teams[0].id : null;
   renderTeamTabs();
   renderMatchBadges();
@@ -2225,6 +2332,7 @@ function syncPitchModeUI() {
   pitchModeSelect.value = state.pitchMode;
   halfGoalSelect.value = state.halfGoalPos;
   halfGoalGroup.style.display = state.pitchMode === 'half' ? 'flex' : 'none';
+  refreshCustomSelects();
 }
 
 pitchModeSelect.addEventListener('change', (e) => changePitchMode(e.target.value, state.halfGoalPos));
@@ -2240,6 +2348,7 @@ function syncZoneSelects() {
   gridToggleBtn.classList.toggle('active', state.showGrid);
   syncPitchModeUI();
   syncQuickButtons();
+  refreshCustomSelects();
 }
 
 lengthZoneSelect.addEventListener('change', (e) => {
@@ -2559,6 +2668,7 @@ async function loadStateFromShareLinkIfPresent() {
 }
 
 // ---- 초기화 ----
+enhanceSelects(document);
 initState();
 setFieldGeometry();
 applyZoomStyle();
