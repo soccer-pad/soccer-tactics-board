@@ -17,18 +17,22 @@ const PITCH = {
 // const가 아니라 setFieldGeometry()로 다시 계산되는 변수로 둔다.
 let W, H, fieldW, fieldH, field, fieldCenterX, fieldCenterY;
 
+function pitchGeometry(mode) {
+  const fw = mode === 'half' ? PITCH.wid * SCALE : PITCH.len * SCALE;
+  const fh = mode === 'half' ? (PITCH.len / 2) * SCALE : PITCH.wid * SCALE;
+  return {
+    fieldW: fw, fieldH: fh, W: fw + 100, H: fh + 100,
+    field: { left: 50, top: 50, right: 50 + fw, bottom: 50 + fh },
+  };
+}
+
 function setFieldGeometry() {
-  const mode = state && state.pitchMode === 'half' ? 'half' : 'full';
-  if (mode === 'half') {
-    fieldW = PITCH.wid * SCALE;
-    fieldH = (PITCH.len / 2) * SCALE;
-  } else {
-    fieldW = PITCH.len * SCALE;
-    fieldH = PITCH.wid * SCALE;
-  }
-  W = fieldW + 100;
-  H = fieldH + 100;
-  field = { left: 50, top: 50, right: 50 + fieldW, bottom: 50 + fieldH };
+  const g = pitchGeometry(state && state.pitchMode === 'half' ? 'half' : 'full');
+  fieldW = g.fieldW;
+  fieldH = g.fieldH;
+  W = g.W;
+  H = g.H;
+  field = g.field;
   fieldCenterX = (field.left + field.right) / 2;
   fieldCenterY = (field.top + field.bottom) / 2;
   // 실제 픽셀 수는 화면 해상도/확대에 맞춰 더 크게 잡는다 (선명하게). 그리기는 항상 W x H 좌표로.
@@ -121,21 +125,28 @@ function cascadePos() {
   };
 }
 
+// 포메이션의 i번째 자리 좌표 (현재 상태와 무관한 순수 계산 — 공유 링크 압축에도 사용)
+function formationSlotPos(key, i, side, pitchMode, halfGoalPos) {
+  const pos = FORMATIONS[key] && FORMATIONS[key][i];
+  if (!pos) return null;
+  const [relX, relY] = pos;
+  const g = pitchGeometry(pitchMode);
+  const f = g.field;
+  if (pitchMode === 'half') {
+    // relX: 0=골라인, 1=하프라인 (세로축) / relY: 0=왼쪽 터치라인, 1=오른쪽 터치라인 (가로축)
+    const goalY = halfGoalPos === 'bottom' ? f.bottom : f.top;
+    const halfwayY = halfGoalPos === 'bottom' ? f.top : f.bottom;
+    return { x: f.left + relY * g.fieldW, y: goalY + (halfwayY - goalY) * relX };
+  }
+  return {
+    x: side === 'L' ? f.left + relX * (g.fieldW / 2) : f.right - relX * (g.fieldW / 2),
+    y: f.top + relY * g.fieldH,
+  };
+}
+
 function formationToPlayers(key, side) {
-  const positions = FORMATIONS[key];
-  return positions.map((pos, i) => {
-    const [relX, relY] = pos;
-    let x, y;
-    if (state.pitchMode === 'half') {
-      // relX: 0=골라인, 1=하프라인 (세로축) / relY: 0=왼쪽 터치라인, 1=오른쪽 터치라인 (가로축)
-      const goalY = state.halfGoalPos === 'bottom' ? field.bottom : field.top;
-      const halfwayY = state.halfGoalPos === 'bottom' ? field.top : field.bottom;
-      x = field.left + relY * fieldW;
-      y = goalY + (halfwayY - goalY) * relX;
-    } else {
-      x = side === 'L' ? field.left + relX * (fieldW / 2) : field.right - relX * (fieldW / 2);
-      y = field.top + relY * fieldH;
-    }
+  return FORMATIONS[key].map((_, i) => {
+    const { x, y } = formationSlotPos(key, i, side, state.pitchMode, state.halfGoalPos);
     return { id: nextId(), num: String(i + 1), x, y };
   });
 }
@@ -2587,28 +2598,354 @@ function b64urlToBytes(s) {
 
 const canCompress = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
 
+async function deflateBytes(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function inflateBytes(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+// ---- 공유 링크 v3: 바이너리로 꽉 눌러 담기 ----
+// 숫자는 가변 길이(작은 수는 1바이트), 색은 팔레트 번호, 포메이션 그대로인 선수는 '어긋난 양(대부분 0)'만,
+// 선의 점들은 직전 점과의 차이만, 팀 마크는 아주 작은 WebP로 줄여서 넣는다.
+const SHARE_VERSION = 3;
+const LINE_TYPES = ['solid', 'dashed', 'freehand', 'freehand-dashed'];
+const VEST_KEYS = ['yellow', 'red', 'orange', 'blue'];
+const CREST_SHARE_PX = 20;
+
+class ByteWriter {
+  constructor() { this.buf = new Uint8Array(256); this.len = 0; }
+  ensure(n) {
+    if (this.len + n <= this.buf.length) return;
+    const nb = new Uint8Array(Math.max(this.buf.length * 2, this.len + n));
+    nb.set(this.buf);
+    this.buf = nb;
+  }
+  byte(v) { this.ensure(1); this.buf[this.len++] = v & 255; }
+  uvar(v) {
+    v = Math.max(0, Math.round(v));
+    while (v >= 128) { this.byte((v % 128) | 128); v = Math.floor(v / 128); }
+    this.byte(v);
+  }
+  svar(v) { v = Math.round(v); this.uvar(v >= 0 ? v * 2 : -v * 2 - 1); }
+  raw(arr) { this.ensure(arr.length); this.buf.set(arr, this.len); this.len += arr.length; }
+  bytes(arr) { this.uvar(arr.length); this.raw(arr); }
+  str(s) { this.bytes(new TextEncoder().encode(s || '')); }
+  color(hex, palette) {
+    const i = palette.indexOf(hex);
+    if (i >= 0) { this.byte(i); return; }
+    const n = parseInt(String(hex || '#000000').slice(1), 16) || 0;
+    this.byte(255); this.byte(n >> 16); this.byte(n >> 8); this.byte(n);
+  }
+  result() { return this.buf.slice(0, this.len); }
+}
+
+class ByteReader {
+  constructor(b) { this.b = b; this.i = 0; }
+  byte() {
+    if (this.i >= this.b.length) throw new Error('링크 데이터가 잘렸어요');
+    return this.b[this.i++];
+  }
+  uvar() {
+    let v = 0, m = 1, b;
+    do { b = this.byte(); v += (b & 127) * m; m *= 128; } while (b & 128);
+    return v;
+  }
+  svar() { const u = this.uvar(); return u % 2 ? -(u + 1) / 2 : u / 2; }
+  rawN(n) {
+    if (this.i + n > this.b.length) throw new Error('링크 데이터가 잘렸어요');
+    const out = this.b.slice(this.i, this.i + n);
+    this.i += n;
+    return out;
+  }
+  bytes() { return this.rawN(this.uvar()); }
+  str() { return new TextDecoder().decode(this.bytes()); }
+  color(palette) {
+    const i = this.byte();
+    if (i !== 255) return palette[i] || palette[0];
+    const r = this.byte(), g = this.byte(), b = this.byte();
+    return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+  }
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// 팀 마크를 20x20, 8색으로 줄여서 (색 목록 + 칸마다 색 번호) 담는다.
+// 작은 그림에서는 WebP/JPEG보다 이 방식이 훨씬 짧다. (선수 동그라미 안에 그려지므로 이 크기로 충분)
+const CREST_COLORS = 8;
+
+function quantizePixels(px, k) {
+  // 간단한 k-means: 픽셀 색들을 k개의 대표색으로 묶는다
+  const n = px.length / 3;
+  const cent = [];
+  for (let i = 0; i < k; i++) {
+    const j = Math.floor((i + 0.5) * n / k) * 3;
+    cent.push([px[j], px[j + 1], px[j + 2]]);
+  }
+  const idx = new Uint8Array(n);
+  for (let iter = 0; iter < 10; iter++) {
+    const sum = Array.from({ length: k }, () => [0, 0, 0, 0]);
+    for (let p = 0; p < n; p++) {
+      const r = px[p * 3], g = px[p * 3 + 1], b = px[p * 3 + 2];
+      let best = 0, bestD = Infinity;
+      for (let c = 0; c < k; c++) {
+        const dr = r - cent[c][0], dg = g - cent[c][1], db = b - cent[c][2];
+        const d = dr * dr * 2 + dg * dg * 4 + db * db * 3;
+        if (d < bestD) { bestD = d; best = c; }
+      }
+      idx[p] = best;
+      const s = sum[best];
+      s[0] += r; s[1] += g; s[2] += b; s[3]++;
+    }
+    for (let c = 0; c < k; c++) {
+      if (sum[c][3]) cent[c] = [sum[c][0] / sum[c][3], sum[c][1] / sum[c][3], sum[c][2] / sum[c][3]];
+    }
+  }
+  return { palette: cent.map(c => c.map(Math.round)), idx };
+}
+
+async function tinyCrest(dataUrl, bgColor) {
+  const img = await loadImage(dataUrl);
+  const N = CREST_SHARE_PX;
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const cx = c.getContext('2d');
+  cx.fillStyle = bgColor;
+  cx.fillRect(0, 0, N, N);
+  cx.imageSmoothingQuality = 'high';
+  cx.drawImage(img, 0, 0, N, N);
+  const data = cx.getImageData(0, 0, N, N).data;
+  const px = new Uint8Array(N * N * 3);
+  for (let i = 0; i < N * N; i++) {
+    px[i * 3] = data[i * 4]; px[i * 3 + 1] = data[i * 4 + 1]; px[i * 3 + 2] = data[i * 4 + 2];
+  }
+  const K = CREST_COLORS;
+  const bits = Math.ceil(Math.log2(K));
+  const { palette, idx } = quantizePixels(px, K);
+  // [크기][색 개수][색 목록 K*3][칸마다 색 번호를 bits비트씩 이어 붙임]
+  const out = new Uint8Array(2 + K * 3 + Math.ceil(N * N * bits / 8));
+  out[0] = N;
+  out[1] = K;
+  palette.forEach((col, i) => { out[2 + i * 3] = col[0]; out[3 + i * 3] = col[1]; out[4 + i * 3] = col[2]; });
+  const base = 2 + K * 3;
+  for (let p = 0; p < N * N; p++) {
+    for (let b = 0; b < bits; b++) {
+      if (idx[p] & (1 << (bits - 1 - b))) {
+        const bit = p * bits + b;
+        out[base + (bit >> 3)] |= 128 >> (bit & 7);
+      }
+    }
+  }
+  return { type: 3, bytes: out };
+}
+
+function crestFromPalette(bytes) {
+  const N = bytes[0], K = bytes[1];
+  const bits = Math.ceil(Math.log2(K));
+  const base = 2 + K * 3;
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const cx = c.getContext('2d');
+  const im = cx.createImageData(N, N);
+  for (let p = 0; p < N * N; p++) {
+    let ci = 0;
+    for (let b = 0; b < bits; b++) {
+      const bit = p * bits + b;
+      ci = (ci << 1) | ((bytes[base + (bit >> 3)] >> (7 - (bit & 7))) & 1);
+    }
+    const col = Math.min(ci, K - 1);
+    im.data[p * 4] = bytes[2 + col * 3];
+    im.data[p * 4 + 1] = bytes[3 + col * 3];
+    im.data[p * 4 + 2] = bytes[4 + col * 3];
+    im.data[p * 4 + 3] = 255;
+  }
+  cx.putImageData(im, 0, 0);
+  return c.toDataURL('image/png');
+}
+
+const CREST_MIME = { 1: 'image/webp', 2: 'image/jpeg' };
+
+async function encodeShareBinary(st) {
+  const w = new ByteWriter();
+  w.byte(SHARE_VERSION);
+  const pitchCode = st.pitchMode === 'half' ? (st.halfGoalPos === 'top' ? 2 : 1) : 0;
+  w.byte(pitchCode | (st.showGrid ? 4 : 0));
+  w.byte(((st.zones.lengthZones || 0) << 4) | (st.zones.widthZones || 0));
+
+  w.uvar(st.teams.length);
+  for (let ti = 0; ti < st.teams.length; ti++) {
+    const t = st.teams[ti];
+    w.color(t.color, TEAM_PALETTE);
+    const fIdx = FORMATION_KEYS.indexOf(String(t.formation));
+    w.byte(fIdx + 1);
+    if (t.crest) {
+      try {
+        const c = await tinyCrest(t.crest, t.color);
+        w.byte(c.type);
+        w.bytes(c.bytes);
+      } catch (e) {
+        w.byte(0);
+      }
+    } else {
+      w.byte(0);
+    }
+    const side = ti % 2 === 0 ? 'L' : 'R';
+    w.uvar(t.players.length);
+    t.players.forEach((p, i) => {
+      // 등번호가 기본값(1, 2, 3...)이면 0만 적는다
+      if (p.num === String(i + 1)) w.uvar(0);
+      else { const e = new TextEncoder().encode(p.num || ''); w.uvar(e.length + 1); w.raw(e); }
+      const slot = fIdx >= 0 ? formationSlotPos(t.formation, i, side, st.pitchMode, st.halfGoalPos) : null;
+      if (slot) { w.svar(p.x - slot.x); w.svar(p.y - slot.y); } else { w.uvar(p.x); w.uvar(p.y); }
+      const hasScale = p.scale && Math.abs(p.scale - 1) > 0.001;
+      w.byte((VEST_KEYS.indexOf(p.vest) + 1) | (hasScale ? 8 : 0));
+      if (hasScale) w.uvar(p.scale * 100);
+    });
+  }
+
+  w.uvar(st.equipment.length);
+  st.equipment.forEach(e => {
+    const deg = Math.round(((e.rot || 0) * 180 / Math.PI % 360 + 360) % 360);
+    const hasScale = e.scale && Math.abs(e.scale - 1) > 0.001;
+    w.byte(Math.max(0, EQUIP_TYPES.findIndex(t => t.type === e.type)) | (deg ? 16 : 0) | (hasScale ? 32 : 0));
+    w.color(e.color, EQUIP_PALETTE);
+    w.uvar(e.x); w.uvar(e.y);
+    if (deg) w.uvar(deg);
+    if (hasScale) w.uvar(e.scale * 100);
+  });
+
+  w.uvar(st.arrows.length);
+  st.arrows.forEach(a => {
+    w.byte(Math.max(0, LINE_TYPES.indexOf(a.type)) | (a.hasArrow === false ? 0 : 4));
+    w.color(a.color, LINE_PALETTE);
+    w.uvar(a.points.length);
+    let px = 0, py = 0;
+    a.points.forEach((p, i) => {
+      const x = Math.round(p.x), y = Math.round(p.y);
+      if (i === 0) { w.svar(x); w.svar(y); } else { w.svar(x - px); w.svar(y - py); }
+      px = x; py = y;
+    });
+  });
+
+  w.uvar(st.texts.length);
+  st.texts.forEach(t => { w.str(t.text); w.uvar(t.x); w.uvar(t.y); });
+  return w.result();
+}
+
+function decodeShareBinary(bytes) {
+  const r = new ByteReader(bytes);
+  if (r.byte() !== SHARE_VERSION) throw new Error('알 수 없는 링크 버전');
+  const flags = r.byte();
+  const pitchCode = flags & 3;
+  const pitchMode = pitchCode ? 'half' : 'full';
+  const halfGoalPos = pitchCode === 2 ? 'top' : 'bottom';
+  const zones = r.byte();
+  const st = {
+    pitchMode, halfGoalPos, showGrid: !!(flags & 4),
+    zones: { lengthZones: zones >> 4, widthZones: zones & 15 },
+    teams: [], equipment: [], arrows: [], texts: [],
+  };
+
+  const teamCount = r.uvar();
+  for (let ti = 0; ti < teamCount; ti++) {
+    const color = r.color(TEAM_PALETTE);
+    const fIdx = r.byte() - 1;
+    const formation = fIdx >= 0 ? FORMATION_KEYS[fIdx] : undefined;
+    const crestType = r.byte();
+    let crest = null;
+    if (crestType === 3) {
+      crest = crestFromPalette(r.bytes());
+    } else if (crestType) {
+      const b64 = bytesToB64url(r.bytes()).replace(/-/g, '+').replace(/_/g, '/');
+      crest = `data:${CREST_MIME[crestType] || 'image/png'};base64,` + b64 + '==='.slice((b64.length + 3) % 4);
+    }
+    const side = ti % 2 === 0 ? 'L' : 'R';
+    const players = [];
+    const count = r.uvar();
+    for (let i = 0; i < count; i++) {
+      const lab = r.uvar();
+      const num = lab === 0 ? String(i + 1) : new TextDecoder().decode(r.rawN(lab - 1));
+      const slot = formation ? formationSlotPos(formation, i, side, pitchMode, halfGoalPos) : null;
+      let x, y;
+      if (slot) { x = slot.x + r.svar(); y = slot.y + r.svar(); } else { x = r.uvar(); y = r.uvar(); }
+      const vb = r.byte();
+      const p = { id: nextId(), num, x, y };
+      if (vb & 7) p.vest = VEST_KEYS[(vb & 7) - 1];
+      if (vb & 8) p.scale = r.uvar() / 100;
+      players.push(p);
+    }
+    const team = { id: nextId(), color, players };
+    if (formation) team.formation = formation;
+    if (crest) team.crest = crest;
+    st.teams.push(team);
+  }
+
+  const eqCount = r.uvar();
+  for (let i = 0; i < eqCount; i++) {
+    const b = r.byte();
+    const type = (EQUIP_TYPES[b & 15] || EQUIP_TYPES[0]).type;
+    const color = r.color(EQUIP_PALETTE);
+    const e = { id: nextId(), type, color, x: r.uvar(), y: r.uvar(), rot: 0 };
+    if (b & 16) e.rot = r.uvar() * Math.PI / 180;
+    if (b & 32) e.scale = r.uvar() / 100;
+    st.equipment.push(e);
+  }
+
+  const arCount = r.uvar();
+  for (let i = 0; i < arCount; i++) {
+    const b = r.byte();
+    const color = r.color(LINE_PALETTE);
+    const n = r.uvar();
+    const points = [];
+    let x = 0, y = 0;
+    for (let j = 0; j < n; j++) {
+      if (j === 0) { x = r.svar(); y = r.svar(); } else { x += r.svar(); y += r.svar(); }
+      points.push({ x, y });
+    }
+    st.arrows.push({ type: LINE_TYPES[b & 3], color, hasArrow: !!(b & 4), points });
+  }
+
+  const txCount = r.uvar();
+  for (let i = 0; i < txCount; i++) {
+    const text = r.str();
+    st.texts.push({ id: nextId(), text, x: r.uvar(), y: r.uvar() });
+  }
+  return st;
+}
+
 async function makeShareHash(st) {
-  const json = JSON.stringify(compactState(st));
-  const raw = new TextEncoder().encode(json);
-  if (!canCompress) return '#c=' + bytesToB64url(raw);
-  const stream = new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate-raw'));
-  const zipped = new Uint8Array(await new Response(stream).arrayBuffer());
-  return '#z=' + bytesToB64url(zipped);
+  const raw = await encodeShareBinary(st);
+  if (canCompress) {
+    const zipped = await deflateBytes(raw);
+    if (zipped.length < raw.length) return '#tz' + bytesToB64url(zipped);
+  }
+  return '#tr' + bytesToB64url(raw);
 }
 
 async function readShareHash(hash) {
-  const m = hash.match(/^#([zcs])=(.+)$/);
+  let m = hash.match(/^#t([zr])([A-Za-z0-9_-]+)$/);
+  if (m) {
+    let bytes = b64urlToBytes(m[2]);
+    if (m[1] === 'z') bytes = await inflateBytes(bytes);
+    return decodeShareBinary(bytes);
+  }
+  // 예전 방식 링크들도 계속 열리게
+  m = hash.match(/^#([zcs])=(.+)$/);
   if (!m) return null;
   const [, kind, data] = m;
-  if (kind === 's') {
-    // 예전 방식 링크 (전체 상태를 그대로 base64로 넣던 버전)
-    return JSON.parse(decodeURIComponent(escape(atob(data))));
-  }
+  if (kind === 's') return JSON.parse(decodeURIComponent(escape(atob(data))));
   let bytes = b64urlToBytes(data);
-  if (kind === 'z') {
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-    bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-  }
+  if (kind === 'z') bytes = await inflateBytes(bytes);
   return expandState(JSON.parse(new TextDecoder().decode(bytes)));
 }
 
@@ -2625,9 +2962,6 @@ document.getElementById('makeShareLinkBtn').addEventListener('click', async () =
   }
   shareLinkInput.value = url;
   shareLinkRow.style.display = 'flex';
-  if (state.teams.some(t => t.crest)) {
-    showToast('팀 마크 사진은 링크에 포함되지 않아요 (팀 색상으로 보여요)');
-  }
 });
 
 document.getElementById('copyShareLinkBtn').addEventListener('click', () => {
@@ -2644,7 +2978,7 @@ document.getElementById('copyShareLinkBtn').addEventListener('click', () => {
 });
 
 async function loadStateFromShareLinkIfPresent() {
-  if (!/^#[zcs]=/.test(location.hash)) return;
+  if (!/^#(t[zr]|[zcs]=)/.test(location.hash)) return;
   try {
     const loaded = await readShareHash(location.hash);
     if (!loaded) return;
